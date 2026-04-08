@@ -1,0 +1,196 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.Models;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class FriendshipController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public FriendshipController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpPost("request")]
+        public async Task<IActionResult> SendRequest([FromQuery] int requesterId, [FromQuery] int addresseeId)
+        {
+            if (requesterId == addresseeId)
+                return BadRequest(new { message = "Cannot send a friend request to yourself" });
+
+            var existing = await _context.Friendships
+                .FirstOrDefaultAsync(f => !f.IsDeleted &&
+                    ((f.RequesterId == requesterId && f.AddresseeId == addresseeId) ||
+                     (f.RequesterId == addresseeId && f.AddresseeId == requesterId)));
+
+            if (existing != null)
+            {
+                if (existing.Status == "Accepted")
+                    return BadRequest(new { message = "Already friends" });
+                if (existing.Status == "Pending")
+                    return BadRequest(new { message = "Friend request already pending" });
+                if (existing.Status == "Declined")
+                {
+                    existing.Status = "Pending";
+                    existing.RequesterId = requesterId;
+                    existing.AddresseeId = addresseeId;
+                    existing.CreatedAt = DateTime.Now;
+                    await _context.SaveChangesAsync();
+                    return Ok(new { message = "Friend request sent" });
+                }
+            }
+
+            var reverse = await _context.Friendships
+                .FirstOrDefaultAsync(f => !f.IsDeleted &&
+                    f.RequesterId == addresseeId && f.AddresseeId == requesterId);
+
+            if (reverse != null)
+                return BadRequest(new { message = "A friendship record already exists" });
+
+            var friendship = new Friendship
+            {
+                RequesterId = requesterId,
+                AddresseeId = addresseeId,
+                Status = "Pending",
+                CreatedAt = DateTime.Now
+            };
+
+            _context.Friendships.Add(friendship);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Friend request sent" });
+        }
+
+        [HttpPut("{id}/accept")]
+        public async Task<IActionResult> Accept(int id, [FromQuery] int userId)
+        {
+            var friendship = await _context.Friendships.FindAsync(id);
+            if (friendship == null || friendship.IsDeleted)
+                return NotFound();
+
+            if (friendship.AddresseeId != userId)
+                return BadRequest(new { message = "Only the recipient can accept this request" });
+
+            friendship.Status = "Accepted";
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Friend request accepted" });
+        }
+
+        [HttpPut("{id}/decline")]
+        public async Task<IActionResult> Decline(int id, [FromQuery] int userId)
+        {
+            var friendship = await _context.Friendships.FindAsync(id);
+            if (friendship == null || friendship.IsDeleted)
+                return NotFound();
+
+            if (friendship.AddresseeId != userId)
+                return BadRequest(new { message = "Only the recipient can decline this request" });
+
+            friendship.Status = "Declined";
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Friend request declined" });
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Remove(int id, [FromQuery] int userId)
+        {
+            var friendship = await _context.Friendships.FindAsync(id);
+            if (friendship == null || friendship.IsDeleted)
+                return NotFound();
+
+            if (friendship.RequesterId != userId && friendship.AddresseeId != userId)
+                return BadRequest(new { message = "Not authorized" });
+
+            friendship.IsDeleted = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Friend removed" });
+        }
+
+        [HttpGet("friends")]
+        public async Task<IActionResult> GetFriends([FromQuery] int userId)
+        {
+            var friendships = await _context.Friendships
+                .Where(f => !f.IsDeleted && f.Status == "Accepted" &&
+                    (f.RequesterId == userId || f.AddresseeId == userId))
+                .Include(f => f.Requester)
+                .Include(f => f.Addressee)
+                .OrderByDescending(f => f.CreatedAt)
+                .ToListAsync();
+
+            var friends = friendships
+                .Select(f =>
+                {
+                    var friend = f.RequesterId == userId ? f.Addressee : f.Requester;
+                    return new
+                    {
+                        FriendshipId = f.Id,
+                        UserId = friend.Id,
+                        friend.Username,
+                        friend.FirstName,
+                        friend.LastName,
+                        friend.IsDeleted
+                    };
+                })
+                .Where(f => !f.IsDeleted)
+                .Select(f => new
+                {
+                    f.FriendshipId,
+                    f.UserId,
+                    f.Username,
+                    f.FirstName,
+                    f.LastName
+                })
+                .ToList();
+
+            return Ok(friends);
+        }
+
+        [HttpGet("requests")]
+        public async Task<IActionResult> GetPendingRequests([FromQuery] int userId)
+        {
+            var requests = await _context.Friendships
+                .Where(f => !f.IsDeleted && f.Status == "Pending" && f.AddresseeId == userId
+                    && !f.Requester.IsDeleted)
+                .Include(f => f.Requester)
+                .OrderByDescending(f => f.CreatedAt)
+                .Select(f => new
+                {
+                    f.Id,
+                    RequesterId = f.Requester.Id,
+                    f.Requester.Username,
+                    f.Requester.FirstName,
+                    f.Requester.LastName,
+                    f.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(requests);
+        }
+
+        [HttpGet("status")]
+        public async Task<IActionResult> GetStatus([FromQuery] int userId, [FromQuery] int otherUserId)
+        {
+            var friendship = await _context.Friendships
+                .FirstOrDefaultAsync(f => !f.IsDeleted &&
+                    ((f.RequesterId == userId && f.AddresseeId == otherUserId) ||
+                     (f.RequesterId == otherUserId && f.AddresseeId == userId)));
+
+            if (friendship == null)
+                return Ok(new { status = "None", friendshipId = (int?)null, isRequester = false });
+
+            return Ok(new
+            {
+                status = friendship.Status,
+                friendshipId = friendship.Id,
+                isRequester = friendship.RequesterId == userId
+            });
+        }
+    }
+}

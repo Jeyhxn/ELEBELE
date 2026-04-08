@@ -1,0 +1,110 @@
+﻿import { useState, useEffect } from 'react'
+import { getGames } from '../api'
+
+export default function GamesList() {
+  const [games, setGames] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [imageErrors, setImageErrors] = useState({})
+
+  useEffect(() => {
+    fetchGames()
+  }, [])
+
+  const fetchGames = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('Fetching games from: https://localhost:7271/api/game')
+      const response = await getGames(1, 20)
+      console.log('Games response:', response.data)
+      setGames(response.data)
+    } catch (err) {
+      console.error('Full error:', err)
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load games: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) {
+      console.log(`No imageURL for ${gameName}, using placeholder`)
+      return getPlaceholderImage(gameName)
+    }
+
+    // If it's already a full URL (starts with http/https)
+    if (imageURL.startsWith('http')) {
+      console.log(`Full URL for ${gameName}:`, imageURL)
+      return imageURL
+    }
+
+    // If it's just a filename, prepend the backend base URL
+    const fullUrl = `https://localhost:7271/images/${imageURL}`
+    console.log(`Constructed URL for ${gameName}:`, fullUrl)
+    return fullUrl
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    // Generate a solid color based on game name hash
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/300x400/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  const handleImageError = (gameId, gameName, attemptedUrl) => {
+    console.error(`❌ Image failed to load for ${gameName}`)
+    console.error(`   Attempted URL: ${attemptedUrl}`)
+    setImageErrors(prev => ({
+      ...prev,
+      [gameId]: true
+    }))
+  }
+
+  if (loading) return <div className="loading">Loading games...</div>
+  if (error) return <div className="error">{error}</div>
+
+  return (
+    <div>
+      {games.length === 0 ? (
+        <p>No games found. Create one to get started!</p>
+      ) : (
+        <div className="games-grid">
+          {games.map(game => {
+            const imageUrl = getImageUrl(game.imageURL, game.name)
+            const hasFailed = imageErrors[game.id]
+
+            return (
+              <div key={game.id} className="game-card">
+                <div className="game-image-container">
+                  <img 
+                    src={hasFailed ? getPlaceholderImage(game.name) : imageUrl}
+                    alt={game.name}
+                    className="game-image"
+                    onError={(e) => {
+                      if (!hasFailed) {
+                        handleImageError(game.id, game.name, imageUrl)
+                        e.target.src = getPlaceholderImage(game.name)
+                      }
+                    }}
+                    onLoad={() => {
+                      console.log(`✅ Image loaded successfully for ${game.name}`)
+                    }}
+                  />
+                </div>
+                <div className="game-info">
+                  <h3>{game.name}</h3>
+                  <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.5rem' }}>
+                    {hasFailed ? '(using placeholder)' : ''}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

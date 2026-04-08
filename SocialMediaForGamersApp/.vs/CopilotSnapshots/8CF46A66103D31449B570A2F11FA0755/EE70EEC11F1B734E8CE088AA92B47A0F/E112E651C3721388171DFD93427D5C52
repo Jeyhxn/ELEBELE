@@ -1,0 +1,36 @@
+﻿import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
+
+export default function SettingsPage() {
+  const { user } = useAuth()
+
+  if (!user) {
+    return (
+      <div className="settings-page">
+        <div className="settings-empty">Sign in to access settings.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="settings-page">
+      <h1>⚙️ Settings</h1>
+
+      <div className="settings-section">
+        <h3>Account</h3>
+        <div className="settings-row">
+          <span className="settings-label">Username</span>
+          <span className="settings-value">{user.username}</span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-label">Email</span>
+          <span className="settings-value">{user.email}</span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-label">Role</span>
+          <span className="settings-value">{user.isAdmin ? 'Admin' : 'Member'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}

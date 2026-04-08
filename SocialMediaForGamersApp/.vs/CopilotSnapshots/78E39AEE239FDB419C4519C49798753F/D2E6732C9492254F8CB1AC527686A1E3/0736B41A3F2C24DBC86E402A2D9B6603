@@ -1,0 +1,43 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using System.IO;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class DebugController : ControllerBase
+    {
+        [HttpGet("images")]
+        public IActionResult GetAvailableImages()
+        {
+            var imagesPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images");
+            
+            if (!Directory.Exists(imagesPath))
+            {
+                return Ok(new { message = "wwwroot/images folder does not exist", path = imagesPath });
+            }
+
+            var files = Directory.GetFiles(imagesPath)
+                .Select(f => new { 
+                    filename = Path.GetFileName(f),
+                    fullPath = f,
+                    url = $"/images/{Path.GetFileName(f)}"
+                })
+                .ToList();
+
+            return Ok(new { 
+                imagesPath = imagesPath,
+                count = files.Count,
+                files = files
+            });
+        }
+
+        [HttpGet("gameimages")]
+        public async Task<IActionResult> GetGameImages()
+        {
+            // This would require access to your DbContext
+            // Just for debugging what's stored
+            return Ok(new { message = "Check browser console for image URLs" });
+        }
+    }
+}

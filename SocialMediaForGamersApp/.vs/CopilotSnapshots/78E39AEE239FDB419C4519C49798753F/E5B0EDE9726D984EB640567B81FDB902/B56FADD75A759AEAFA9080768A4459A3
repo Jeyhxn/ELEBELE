@@ -1,0 +1,45 @@
+﻿using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.Repositories.Implementations;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowReact", builder =>
+    {
+        builder.WithOrigins("http://localhost:5173", "http://localhost:3000")
+               .AllowAnyMethod()
+               .AllowAnyHeader();
+    });
+});
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddDbContext<AppDbContext>(opt =>
+    opt.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+
+builder.Services.AddScoped<IRepository, Repository>();
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Use CORS
+app.UseCors("AllowReact");
+
+app.UseHttpsRedirection();
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();

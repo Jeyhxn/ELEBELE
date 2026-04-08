@@ -1,0 +1,89 @@
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.DTOs;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class GameController : ControllerBase
+    {
+        private readonly IRepository _repository;
+
+        public GameController(IRepository repository)
+        {
+            _repository = repository;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> Get(int page = 1, int take = 3)
+        {
+            int skipValue = (page - 1) * take;
+            var games = await _repository.GameGetAll(orderExpression: c => c.Name, isDescending: false, skip: skipValue, take: take).ToListAsync();
+
+            return Ok(games);
+        }
+
+        [HttpGet]
+        [Route("{id}")]
+        public async Task<IActionResult> Get(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+
+            if (game is null) return NotFound();
+
+            return Ok(game);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromForm] CreateGameDto createGameDto)
+        {
+            Game game = new Game
+            {
+                Name = createGameDto.Name
+            };
+            await _repository.AddAsync(game);
+            await _repository.SaveChangeAsync();
+
+            return StatusCode(StatusCodes.Status201Created, game);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+            if (game is null) return NotFound();
+
+            _repository.Delete(game);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, string name)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+
+            if (game is null) return NotFound();
+
+            game.Name = name;
+
+            _repository.Update(game);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+    }
+}

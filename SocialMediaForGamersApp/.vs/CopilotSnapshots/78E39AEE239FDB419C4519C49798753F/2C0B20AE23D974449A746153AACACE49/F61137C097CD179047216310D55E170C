@@ -1,0 +1,7 @@
+﻿namespace SocialMediaForGamersApp.DTOs
+{
+    public class CreateGameDto
+    {
+        public string Name { get; set; }
+    }
+}

@@ -1,0 +1,89 @@
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.DTOs;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class PlatformController : ControllerBase
+    {
+        private readonly IRepository _repository;
+            
+        public PlatformController(IRepository repository)
+        {
+            _repository = repository;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> Get(int page = 1, int take = 3)
+        {
+            int skipValue = (page - 1) * take;
+            var platforms = await _repository.PlatformGetAll( orderExpression: c => c.Name, isDescending: false, skip: skipValue, take: take).ToListAsync();
+
+            return Ok(platforms);
+        }
+
+        [HttpGet]
+        [Route("{id}")]
+        public async Task<IActionResult> Get(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Platform platform = await _repository.PlatformGetByIdAsync(id);
+
+            if (platform is null) return NotFound();
+
+            return Ok(platform);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreatePlatformDto createPlatformDto)
+        {
+            Platform platform = new Platform
+            {
+                Name = createPlatformDto.Name
+            };
+            await _repository.AddAsync(platform);
+            await _repository.SaveChangeAsync();
+
+            return StatusCode(StatusCodes.Status201Created, platform);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Platform platform = await _repository.PlatformGetByIdAsync(id);
+            if (platform is null) return NotFound();
+
+            _repository.Delete(platform);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, string name)
+        {
+            if (id < 1) return BadRequest();
+
+            Platform platform = await _repository.PlatformGetByIdAsync(id);
+
+            if (platform is null) return NotFound();
+
+            platform.Name = name;
+
+            _repository.Update(platform);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+    }
+}

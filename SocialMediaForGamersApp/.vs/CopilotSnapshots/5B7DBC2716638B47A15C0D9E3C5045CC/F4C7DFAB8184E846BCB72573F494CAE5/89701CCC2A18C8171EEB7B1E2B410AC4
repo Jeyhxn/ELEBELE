@@ -1,0 +1,88 @@
+﻿import { useNavigate, Navigate } from 'react-router-dom'
+import { useFavorites } from '../context/FavoriteContext'
+import { useAuth } from '../context/AuthContext'
+
+export default function FavoritesPage() {
+  const navigate = useNavigate()
+  const { user, loading } = useAuth()
+  const { favorites, removeFavorite } = useFavorites()
+
+  if (loading) {
+    return <div className="loading">Loading...</div>
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholderImage(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/300x400/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  if (favorites.length === 0) {
+    return (
+      <div className="favorites-empty">
+        <h2>Your Favorites</h2>
+        <p>No favorite games yet. Start adding games to your favorites!</p>
+        <button onClick={() => navigate('/')} className="back-button">
+          ← Back to Games
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="favorites-page">
+      <div className="favorites-header">
+        <h2>❤️ Your Favorite Games</h2>
+        <p className="favorites-count">{favorites.length} game(s) in favorites</p>
+      </div>
+
+      <div className="games-grid">
+        {favorites.map(game => (
+          <div 
+            key={game.id} 
+            className="game-card"
+            onClick={() => navigate(`/game/${game.id}`)}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className="game-image-container">
+              <img 
+                src={getImageUrl(game.imageURL, game.name)}
+                alt={game.name}
+                className="game-image"
+                onError={(e) => {
+                  e.target.src = getPlaceholderImage(game.name)
+                }}
+              />
+              <button
+                className="remove-favorite-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  removeFavorite(game.id)
+                }}
+                title="Remove from favorites"
+              >
+                ❌
+              </button>
+            </div>
+            <div className="game-card-content">
+              <h3>{game.name}</h3>
+              <p className="game-rating">⭐ {game.rating}/100</p>
+              <p className="game-developer">{game.developer}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}

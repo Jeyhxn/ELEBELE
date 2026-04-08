@@ -1,0 +1,12 @@
+﻿using System.Text.Json.Serialization;
+
+namespace SocialMediaForGamersApp.Models
+{
+    public class Category : BaseEntity
+    {
+        public string Name { get; set; }
+
+        [JsonIgnore]
+        public List<Game>? Games { get; set; }
+    }
+}

@@ -1,0 +1,21 @@
+﻿import './index.css'
+import GamesList from './components/GamesList'
+
+export default function App() {
+  return (
+    <div className="app">
+      <nav className="navbar">
+        <div className="nav-container">
+          <h1>🎮 Social Media for Gamers</h1>
+        </div>
+      </nav>
+
+      <main className="container">
+        <section id="games" className="section">
+          <h2>Featured Games</h2>
+          <GamesList />
+        </section>
+      </main>
+    </div>
+  )
+}

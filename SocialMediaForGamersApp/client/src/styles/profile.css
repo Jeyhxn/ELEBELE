@@ -1,0 +1,293 @@
+/* ===========================
+   Profile Page
+   =========================== */
+.pp {
+  max-width: 740px;
+  margin: 0;
+  position: absolute; /* Absolute positioning */
+  top: 0; /* Align to top */
+  right: 0; /* Align to the right */
+  padding: 1rem; /* Optional padding for spacing */
+}
+
+.pp-empty {
+  text-align: center;
+  color: #888;
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+}
+
+.pp-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 0 1rem;
+}
+
+.pp-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.pp-identity { flex: 1; min-width: 0; }
+.pp-name { font-size: 1.4rem; color: #1a1a1a; line-height: 1.2; }
+.pp-handle { font-size: 0.85rem; color: #818384; }
+
+.pp-badge {
+  background: #764ba2;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Tabs */
+.pp-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #eee;
+  margin-bottom: 1rem;
+}
+
+.pp-tab {
+  background: none;
+  border: none;
+  padding: 0.65rem 1.2rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #818384;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+
+.pp-tab:hover { color: #1a1a1a; }
+
+.pp-tab.active {
+  color: #1a1a1a;
+  border-bottom-color: #1a1a1a;
+}
+
+/* Content */
+.pp-section { margin-bottom: 1.5rem; }
+
+.pp-section-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #818384;
+  margin-bottom: 0.6rem;
+  padding-left: 0.25rem;
+}
+
+/* Empty state */
+.pp-empty-card {
+  text-align: center;
+  background: white;
+  border-radius: 12px;
+  padding: 2.5rem 1.5rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.pp-empty-icon { font-size: 2.5rem; display: block; margin-bottom: 0.75rem; }
+.pp-empty-card h3 { font-size: 1.1rem; color: #1a1a1a; margin-bottom: 0.3rem; }
+.pp-empty-card p { font-size: 0.88rem; color: #818384; margin-bottom: 1rem; }
+
+.pp-cta {
+  display: inline-block;
+  background: #2196F3;
+  color: white;
+  padding: 0.5rem 1.3rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.pp-cta:hover { background: #1976D2; }
+
+/* Post items */
+.pp-items { display: flex; flex-direction: column; gap: 0; }
+
+.pp-post-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: white;
+  text-decoration: none;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.12s;
+}
+
+.pp-post-item:first-child { border-radius: 10px 10px 0 0; }
+.pp-post-item:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+.pp-post-item:only-child { border-radius: 10px; }
+.pp-post-item:hover { background: #f8f9fa; }
+
+.pp-post-score {
+  min-width: 32px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1a1a1a;
+  padding-top: 0.15rem;
+}
+
+.pp-post-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pp-post-meta { font-size: 0.78rem; color: #818384; }
+
+.pp-post-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pp-post-stats { font-size: 0.78rem; color: #818384; }
+
+/* Comment items */
+.pp-comment-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  background: white;
+  text-decoration: none;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.12s;
+}
+
+.pp-comment-item:first-child { border-radius: 10px 10px 0 0; }
+.pp-comment-item:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+.pp-comment-item:only-child { border-radius: 10px; }
+.pp-comment-item:hover { background: #f8f9fa; }
+
+.pp-comment-context {
+  font-size: 0.78rem;
+  color: #818384;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: baseline;
+}
+
+.pp-comment-context strong { color: #1a1a1a; font-weight: 600; }
+.pp-comment-where { color: #818384; }
+
+.pp-comment-text {
+  font-size: 0.88rem;
+  color: #333;
+  line-height: 1.45;
+}
+
+@media (max-width: 768px) {
+  .pp-tabs { overflow-x: auto; }
+  .pp-tab { white-space: nowrap; padding: 0.55rem 0.8rem; font-size: 0.82rem; }
+}
+
+/* Notifications page */
+.notif-page { max-width: 680px; margin: 0 auto; }
+
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.notif-header h1 { font-size: 1.5rem; color: #1a1a1a; }
+
+.notif-mark-all {
+  background: none;
+  border: 1px solid #2196F3;
+  color: #2196F3;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.notif-mark-all:hover { background: #2196F3; color: white; }
+
+.notif-header-actions { display: flex; gap: 0.5rem; }
+
+.notif-clear-all {
+  background: none;
+  border: 1px solid #ff5252;
+  color: #ff5252;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.notif-clear-all:hover { background: #ff5252; color: white; }
+
+.notif-empty {
+  text-align: center;
+  color: #888;
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+}
+
+.notif-list { display: flex; flex-direction: column; gap: 0; }
+
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  background: white;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.notif-item:first-child { border-radius: 10px 10px 0 0; }
+.notif-item:last-child { border-radius: 0 0 10px 10px; border-bottom: none; }
+.notif-item:only-child { border-radius: 10px; }
+.notif-item:hover { background: #f5f8ff; }
+.notif-item.unread { background: #eef5ff; }
+.notif-item.unread:hover { background: #e0edff; }
+
+.notif-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 0.1rem; }
+.notif-body { flex: 1; min-width: 0; }
+.notif-message { font-size: 0.9rem; color: #1a1a1a; line-height: 1.4; margin-bottom: 0.2rem; }
+.notif-time { font-size: 0.78rem; color: #888; }
+
+.notif-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2196F3;
+  flex-shrink: 0;
+  margin-top: 0.45rem;
+} 

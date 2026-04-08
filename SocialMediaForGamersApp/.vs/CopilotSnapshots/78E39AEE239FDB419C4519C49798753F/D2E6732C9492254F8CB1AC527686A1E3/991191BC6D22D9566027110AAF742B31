@@ -1,0 +1,49 @@
+﻿import './index.css'
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
+import GamesList from './components/GamesList'
+import GameDetail from './components/GameDetail'
+import CategoriesList from './components/CategoriesList'
+import PlatformsList from './components/PlatformsList'
+
+export default function App() {
+  return (
+    <Router>
+      <div className="app">
+        <nav className="navbar">
+          <div className="nav-container">
+            <h1>🎮 Social Media for Gamers</h1>
+            <ul className="nav-menu">
+              <li><Link to="/">Games</Link></li>
+              <li><Link to="/categories">Categories</Link></li>
+              <li><Link to="/platforms">Platforms</Link></li>
+            </ul>
+          </div>
+        </nav>
+
+        <main className="container">
+          <Routes>
+            <Route path="/" element={
+              <section className="section">
+                <h2>Featured Games</h2>
+                <GamesList />
+              </section>
+            } />
+            <Route path="/game/:id" element={<GameDetail />} />
+            <Route path="/categories" element={
+              <section className="section">
+                <h2>Game Categories</h2>
+                <CategoriesList />
+              </section>
+            } />
+            <Route path="/platforms" element={
+              <section className="section">
+                <h2>Gaming Platforms</h2>
+                <PlatformsList />
+              </section>
+            } />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  )
+}

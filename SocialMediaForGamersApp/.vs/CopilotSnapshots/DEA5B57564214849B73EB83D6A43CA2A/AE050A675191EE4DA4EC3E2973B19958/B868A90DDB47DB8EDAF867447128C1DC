@@ -1,0 +1,123 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Comment;
+using SocialMediaForGamersApp.Models;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class CommentController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public CommentController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet("game/{gameId}")]
+        public async Task<IActionResult> GetByGame(int gameId)
+        {
+            var comments = await _context.Comments
+                .Where(c => c.GameId == gameId && !c.IsDeleted)
+                .Include(c => c.User)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Content,
+                    c.CreatedAt,
+                    c.GameId,
+                    c.UserId,
+                    Username = c.User.Username
+                })
+                .ToListAsync();
+
+            return Ok(comments);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateCommentDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Comment content is required" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null)
+                return BadRequest(new { message = "User not found" });
+
+            var game = await _context.Games.FindAsync(dto.GameId);
+            if (game == null)
+                return BadRequest(new { message = "Game not found" });
+
+            var comment = new Comment
+            {
+                Content = dto.Content,
+                GameId = dto.GameId,
+                UserId = dto.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Comments.Add(comment);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                comment.Id,
+                comment.Content,
+                comment.CreatedAt,
+                comment.GameId,
+                comment.UserId,
+                Username = user.Username
+            });
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id, [FromQuery] int userId)
+        {
+            var comment = await _context.Comments.FindAsync(id);
+            if (comment == null)
+                return NotFound();
+
+            if (comment.UserId != userId)
+                return Forbid();
+
+            comment.IsDeleted = true;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateCommentDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Comment content is required" });
+
+            var comment = await _context.Comments
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.Id == id);
+
+            if (comment == null)
+                return NotFound();
+
+            if (comment.UserId != dto.UserId)
+                return Forbid();
+
+            comment.Content = dto.Content;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                comment.Id,
+                comment.Content,
+                comment.CreatedAt,
+                comment.GameId,
+                comment.UserId,
+                Username = comment.User.Username
+            });
+        }
+    }
+}

@@ -1,0 +1,195 @@
+﻿import './index.css'
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
+import GamesList from './components/GamesList'
+import GameDetail from './components/GameDetail'
+import FavoritesPage from './components/FavoritesPage'
+import Login from './components/Login'
+import Register from './components/Register'
+import AdminPanel from './components/AdminPanel'
+import FilterSidebar from './components/FilterSidebar'
+import FeaturedSections from './components/FeaturedSections'
+import CommunityFeed from './components/CommunityFeed'
+import PostDetail from './components/PostDetail'
+import { FavoriteProvider } from './context/FavoriteContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { useState, useEffect, useRef } from 'react'
+
+function SearchBar({ onSearch }) {
+  const [query, setQuery] = useState('')
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      onSearch(query)
+    }, 400)
+    return () => clearTimeout(timerRef.current)
+  }, [query])
+
+  return (
+    <div className="navbar-search">
+      <span className="navbar-search-icon">🔎</span>
+      <input
+        type="text"
+        placeholder="Search games..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        className="navbar-search-input"
+      />
+      {query && (
+        <button className="navbar-search-clear" onClick={() => setQuery('')}>✕</button>
+      )}
+    </div>
+  )
+}
+
+function CommunityNavSearch({ value, onChange }) {
+  return (
+    <div className="navbar-search">
+      <span className="navbar-search-icon">🔍</span>
+      <input
+        type="text"
+        placeholder="Search community..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="navbar-search-input"
+      />
+      {value && (
+        <button className="navbar-search-clear" onClick={() => onChange('')}>✕</button>
+      )}
+    </div>
+  )
+}
+
+function NavBar({ onSearch, communitySearch, onCommunitySearch, onCreatePost }) {
+  const { user, logout } = useAuth()
+  const location = useLocation()
+  const isCommunity = location.pathname === '/community'
+
+  return (
+    <nav className="navbar">
+      <div className="nav-container">
+        <Link to="/" style={{ textDecoration: 'none', color: 'white' }}>
+          <h1>🎮 Social Media for Gamers</h1>
+        </Link>
+
+        {isCommunity ? (
+          <>
+            <CommunityNavSearch value={communitySearch} onChange={onCommunitySearch} />
+            <div className="nav-links">
+              {user && (
+                <button className="community-create-btn" onClick={onCreatePost}>
+                  ＋ Create
+                </button>
+              )}
+              {user ? (
+                <>
+                  <Link to="/favorites" className="community-profile-btn" title={user.username}>
+                    <span className="community-avatar">{user.username.charAt(0).toUpperCase()}</span>
+                  </Link>
+                  <button className="logout-button" onClick={logout}>
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <div className="auth-links">
+                  <Link to="/login" className="login-link">Sign In</Link>
+                  <Link to="/register" className="register-link">Sign Up</Link>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <SearchBar onSearch={onSearch} />
+            <div className="nav-links">
+              {user && (
+                <Link to="/favorites" style={{ textDecoration: 'none' }} className="favorites-link">
+                  ❤️ Favorites
+                </Link>
+              )}
+              <Link to="/community" style={{ textDecoration: 'none' }} className="community-link">
+                💬 Community
+              </Link>
+              {user?.isAdmin && (
+                <Link to="/admin" style={{ textDecoration: 'none' }} className="admin-link">
+                  ⚙️ Admin
+                </Link>
+              )}
+              {user ? (
+                <div className="user-menu">
+                  <span className="user-greeting">👤 {user.username}</span>
+                  <button className="logout-button" onClick={logout}>
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="auth-links">
+                  <Link to="/login" className="login-link">Sign In</Link>
+                  <Link to="/register" className="register-link">Sign Up</Link>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </nav>
+  )
+}
+
+export default function App() {
+  const [filters, setFilters] = useState({ search: '', categoryId: null, platformIds: [], tagIds: [] })
+  const [communitySearch, setCommunitySearch] = useState('')
+  const [showCreatePost, setShowCreatePost] = useState(false)
+
+  const handleSearch = (term) => {
+    setFilters(prev => ({ ...prev, search: term }))
+  }
+
+  return (
+    <AuthProvider>
+      <FavoriteProvider>
+        <Router>
+          <div className="app">
+            <NavBar
+              onSearch={handleSearch}
+              communitySearch={communitySearch}
+              onCommunitySearch={setCommunitySearch}
+              onCreatePost={() => setShowCreatePost(true)}
+            />
+
+            <main className="container">
+              <Routes>
+                <Route path="/" element={
+                  <>
+                    <FeaturedSections />
+                    <div className="home-layout">
+                      <FilterSidebar filters={filters} onFilterChange={setFilters} />
+                      <section className="section home-content">
+                        <h2>All Games</h2>
+                        <GamesList filters={filters} />
+                      </section>
+                    </div>
+                  </>
+                } />
+                <Route path="/game/:id" element={<GameDetail />} />
+                <Route path="/favorites" element={<FavoritesPage />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/community" element={
+                  <CommunityFeed
+                    searchQuery={communitySearch}
+                    showCreateModal={showCreatePost}
+                    setShowCreateModal={setShowCreatePost}
+                  />
+                } />
+                <Route path="/community/post/:id" element={<PostDetail />} />
+                <Route path="/admin" element={<AdminPanel />} />
+              </Routes>
+            </main>
+          </div>
+        </Router>
+      </FavoriteProvider>
+    </AuthProvider>
+  )
+}

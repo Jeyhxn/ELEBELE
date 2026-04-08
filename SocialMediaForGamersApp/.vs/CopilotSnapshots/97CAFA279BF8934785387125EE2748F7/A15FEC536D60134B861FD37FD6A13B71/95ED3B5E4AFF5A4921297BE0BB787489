@@ -1,0 +1,437 @@
+﻿import './index.css'
+import './styles/navbar.css'
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom'
+import GamesList from './components/GamesList'
+import GameDetail from './components/GameDetail'
+import FavoritesPage from './components/FavoritesPage'
+import Login from './components/Login'
+import Register from './components/Register'
+import AdminPanel from './components/AdminPanel'
+import FilterSidebar from './components/FilterSidebar'
+import FeaturedSections from './components/FeaturedSections'
+import CommunityFeed from './components/CommunityFeed'
+import PostDetail from './components/PostDetail'
+import NotificationsPage from './components/NotificationsPage'
+import ProfilePage from './components/ProfilePage'
+import SettingsPage from './components/SettingsPage'
+import Footer from './components/Footer'
+import { FavoriteProvider } from './context/FavoriteContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { getTopRatedGames, getPostFeed, getCommunities, getUnreadNotificationCount } from './api'
+
+const MAX_RECENT = 5
+const LS_KEY = 'smg_recent_searches'
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') } catch { return [] }
+}
+function saveRecent(items) {
+  localStorage.setItem(LS_KEY, JSON.stringify(items))
+}
+
+function SearchBar({ onSearch, onCommunitySearch, isCommunity }) {
+  const [query, setQuery] = useState('')
+  const [focused, setFocused] = useState(false)
+  const [recent, setRecent] = useState(loadRecent)
+  const [trending, setTrending] = useState([])
+  const [matchedPosts, setMatchedPosts] = useState([])
+  const [matchedCommunities, setMatchedCommunities] = useState([])
+  const wrapRef = useRef(null)
+  const timerRef = useRef(null)
+  const liveRef = useRef(null)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    getTopRatedGames(6)
+      .then(res => setTrending(res.data.slice(0, 6)))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setFocused(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Live search for posts + communities as user types
+  useEffect(() => {
+    if (liveRef.current) clearTimeout(liveRef.current)
+    const trimmed = query.trim()
+    if (!trimmed || trimmed.length < 2) {
+      setMatchedPosts([])
+      setMatchedCommunities([])
+      return
+    }
+    liveRef.current = setTimeout(() => {
+      getPostFeed(1, 5, 'new', null, trimmed)
+        .then(res => setMatchedPosts(res.data.slice(0, 5)))
+        .catch(() => setMatchedPosts([]))
+      getCommunities(trimmed)
+        .then(res => setMatchedCommunities(res.data.slice(0, 5)))
+        .catch(() => setMatchedCommunities([]))
+    }, 300)
+    return () => clearTimeout(liveRef.current)
+  }, [query])
+
+  const commit = useCallback((value) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+
+    const updated = [trimmed, ...recent.filter(r => r !== trimmed)].slice(0, MAX_RECENT)
+    setRecent(updated)
+    saveRecent(updated)
+
+    if (isCommunity) {
+      onCommunitySearch(trimmed)
+    } else {
+      onSearch(trimmed)
+      navigate('/')
+    }
+    setFocused(false)
+    setQuery(trimmed)
+  }, [recent, isCommunity, onSearch, onCommunitySearch, navigate])
+
+  const handleChange = (e) => {
+    const v = e.target.value
+    setQuery(v)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      if (isCommunity) onCommunitySearch(v)
+      else onSearch(v)
+    }, 350)
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') commit(query)
+    if (e.key === 'Escape') setFocused(false)
+  }
+
+  const removeRecent = (item, e) => {
+    e.stopPropagation()
+    const updated = recent.filter(r => r !== item)
+    setRecent(updated)
+    saveRecent(updated)
+  }
+
+  const clearAll = () => {
+    setQuery('')
+    setRecent([])
+    saveRecent([])
+    onSearch('')
+    onCommunitySearch('')
+  }
+
+  const goToPost = (postId) => {
+    setFocused(false)
+    navigate(`/community/post/${postId}`)
+  }
+
+  const goToCommunity = (communityId) => {
+    setFocused(false)
+    onCommunitySearch('')
+    navigate('/community')
+    // Small delay so community page mounts, then select community
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('select-community', { detail: communityId }))
+    }, 100)
+  }
+
+  const hasLiveResults = matchedPosts.length > 0 || matchedCommunities.length > 0
+  const hasIdleContent = recent.length > 0 || trending.length > 0
+  const showDropdown = focused && (hasLiveResults || (query.trim().length < 2 && hasIdleContent))
+
+  return (
+    <div className="sb-wrap" ref={wrapRef}>
+      <div className={`sb-input-row ${focused ? 'focused' : ''}`}>
+        <img src="/assets/icons/search.png" alt="Search" className="sb-icon" />
+        <input
+          className="sb-input"
+          type="text"
+          placeholder="Find anything"
+          value={query}
+          onChange={handleChange}
+          onFocus={() => setFocused(true)}
+          onKeyDown={handleKeyDown}
+          autoComplete="off"
+        />
+        {query && (
+          <button className="sb-clear" onClick={clearAll}>✕</button>
+        )}
+      </div>
+
+      {showDropdown && (
+        <div className="sb-dropdown">
+          {/* Live community matches */}
+          {matchedCommunities.length > 0 && (
+            <div className="sb-section">
+              <span className="sb-section-label">Communities</span>
+              {matchedCommunities.map(c => (
+                <div key={c.id} className="sb-row sb-community-row" onClick={() => goToCommunity(c.id)}>
+                  <span className="sb-row-icon sb-comm-icon">🎮</span>
+                  <div className="sb-trend-body">
+                    <span className="sb-row-text">c/{c.name}</span>
+                    <span className="sb-row-sub">{c.memberCount} members · {c.postCount} posts</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Live post matches */}
+          {matchedPosts.length > 0 && (
+            <div className="sb-section">
+              <span className="sb-section-label">Posts</span>
+              {matchedPosts.map(p => (
+                <div key={p.id} className="sb-row sb-post-row" onClick={() => goToPost(p.id)}>
+                  <span className="sb-row-icon sb-post-icon">📝</span>
+                  <div className="sb-trend-body">
+                    <span className="sb-row-text">{p.title}</span>
+                    <span className="sb-row-sub">c/{p.community.name} · {p.author.username}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Recent (only when no live results) */}
+          {!hasLiveResults && recent.length > 0 && (
+            <div className="sb-section">
+              <span className="sb-section-label">Recent</span>
+              {recent.map(item => (
+                <div key={item} className="sb-row sb-recent-row" onClick={() => { setQuery(item); commit(item) }}>
+                  <span className="sb-row-icon sb-clock">🕐</span>
+                  <span className="sb-row-text">{item}</span>
+                  <button className="sb-remove" onClick={(e) => removeRecent(item, e)}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Trending (only when no live results) */}
+          {!hasLiveResults && trending.length > 0 && (
+            <div className="sb-section">
+              <span className="sb-section-label">Trending</span>
+              {trending.map(game => (
+                <div key={game.id} className="sb-row sb-trending-row" onClick={() => { setQuery(game.name); commit(game.name) }}>
+                  <span className="sb-row-icon sb-trend">↗</span>
+                  <div className="sb-trend-body">
+                    <span className="sb-row-text">{game.name}</span>
+                    <span className="sb-row-sub">Based on your interests</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProfileDropdown({ user, logout }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div className="pd-wrap" ref={ref}>
+      <button className="pd-trigger" onClick={() => setOpen(o => !o)}>
+        <span className="pd-avatar" style={{ background: `hsl(${user.username.length * 40}, 60%, 45%)` }}>
+          {user.username.charAt(0).toUpperCase()}
+        </span>
+      </button>
+
+      {open && (
+        <div className="pd-dropdown">
+          <Link to="/profile" className="pd-item" onClick={() => setOpen(false)}>
+            <img src="/assets/icons/user.png" alt="Profile" className="pd-item-icon" />
+            <div className="pd-item-body">
+              <span className="pd-item-label">View Profile</span>
+              <span className="pd-item-sub">u/{user.username}</span>
+            </div>
+          </Link>
+
+          <div className="pd-divider" />
+
+          {user.isAdmin && (
+            <Link to="/admin" className="pd-item" onClick={() => setOpen(false)}>
+              <img src="/assets/icons/settings.png" alt="Admin" className="pd-item-icon" />
+              <div className="pd-item-body">
+                <span className="pd-item-label">Admin Panel</span>
+              </div>
+            </Link>
+          )}
+
+          <Link to="/favorites" className="pd-item" onClick={() => setOpen(false)}>
+            <img src="/assets/icons/heart.png" alt="Favorites" className="pd-item-icon" />
+            <div className="pd-item-body">
+              <span className="pd-item-label">Favorites</span>
+            </div>
+          </Link>
+
+          <Link to="/settings" className="pd-item" onClick={() => setOpen(false)}>
+            <img src="/assets/icons/settings.png" alt="Settings" className="pd-item-icon" />
+            <div className="pd-item-body">
+              <span className="pd-item-label">Settings</span>
+            </div>
+          </Link>
+
+          <div className="pd-divider" />
+
+          <button className="pd-item pd-logout" onClick={() => { setOpen(false); logout() }}>
+            <img src="/assets/icons/logout.png" alt="Logout" className="pd-item-icon" />
+            <div className="pd-item-body">
+              <span className="pd-item-label">Log Out</span>
+            </div>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NavBar({ onSearch, communitySearch, onCommunitySearch, onCreatePost }) {
+  const { user, logout } = useAuth()
+  const location = useLocation()
+  const isCommunity = location.pathname.startsWith('/community')
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return }
+    const fetchCount = () => {
+      getUnreadNotificationCount(user.id)
+        .then(res => setUnreadCount(res.data.count))
+        .catch(() => {})
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 30000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  return (
+    <nav className="navbar">
+      <div className="nav-container">
+        <Link to="/" style={{ textDecoration: 'none', color: 'white'}}>
+          <h1>Gameily
+          </h1>
+        </Link>
+
+        <SearchBar
+          onSearch={onSearch}
+          onCommunitySearch={onCommunitySearch}
+          isCommunity={isCommunity}
+        />
+
+        <div className="nav-links">
+          {isCommunity && user && (
+            <button className="community-create-btn" onClick={onCreatePost}>
+              ＋ Create
+            </button>
+          )}
+          {!isCommunity && user && (
+            <Link to="/favorites" style={{ textDecoration: 'none' }} className="favorites-link">
+              <img src="/assets/icons/heart.png" alt="" className="nav-link-icon" /> Favorites
+            </Link>
+          )}
+          <Link to="/community" style={{ textDecoration: 'none' }} className="community-link">
+            💬 Community
+          </Link>
+          {user && (
+            <Link to="/notifications" style={{ textDecoration: 'none' }} className="notif-bell-link">
+              <img src="/assets/icons/bell.png" alt="Notifications" className="notif-bell" />
+              {unreadCount > 0 && (
+                <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
+              )}
+            </Link>
+          )}
+          {user?.isAdmin && !isCommunity && (
+            <Link to="/admin" style={{ textDecoration: 'none' }} className="admin-link">
+              <img src="/assets/icons/settings.png" alt="" className="nav-link-icon" /> Admin
+            </Link>
+          )}
+          {user ? (
+            <ProfileDropdown user={user} logout={logout} />
+          ) : (
+            <div className="auth-links">
+              <Link to="/login" className="login-link">Sign In</Link>
+              <Link to="/register" className="register-link">Sign Up</Link>
+            </div>
+          )}
+        </div>
+      </div>
+    </nav>
+  )
+}
+
+export default function App() {
+  const [filters, setFilters] = useState({ search: '', categoryId: null, platformIds: [], tagIds: [] })
+  const [communitySearch, setCommunitySearch] = useState('')
+  const [showCreatePost, setShowCreatePost] = useState(false)
+
+  const handleSearch = (term) => {
+    setFilters(prev => ({ ...prev, search: term }))
+  }
+
+  return (
+    <AuthProvider>
+      <FavoriteProvider>
+        <Router>
+          <div className="app">
+            <NavBar
+              onSearch={handleSearch}
+              communitySearch={communitySearch}
+              onCommunitySearch={setCommunitySearch}
+              onCreatePost={() => setShowCreatePost(true)}
+            />
+
+            <main className="container">
+              <Routes>
+                <Route path="/" element={
+                  <>
+                    <FeaturedSections />
+                    <div className="home-layout">
+                      <FilterSidebar filters={filters} onFilterChange={setFilters} />
+                      <section className="section home-content">
+                        <h2>All Games</h2>
+                        <GamesList filters={filters} />
+                      </section>
+                    </div>
+                  </>
+                } />
+                <Route path="/game/:id" element={<GameDetail />} />
+                <Route path="/favorites" element={<FavoritesPage />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/community" element={
+                  <CommunityFeed
+                    searchQuery={communitySearch}
+                    showCreateModal={showCreatePost}
+                    setShowCreateModal={setShowCreatePost}
+                  />
+                } />
+                <Route path="/community/post/:id" element={<PostDetail />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/admin" element={<AdminPanel />} />
+              </Routes>
+            </main>
+            <Footer />
+          </div>
+        </Router>
+      </FavoriteProvider>
+    </AuthProvider>
+  )
+}

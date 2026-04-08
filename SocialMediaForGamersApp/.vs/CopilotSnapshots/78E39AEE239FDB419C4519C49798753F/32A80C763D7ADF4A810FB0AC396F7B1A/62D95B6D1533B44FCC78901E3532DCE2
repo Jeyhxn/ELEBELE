@@ -1,0 +1,139 @@
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.DTOs;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+using System.Runtime.InteropServices;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class GameController : ControllerBase
+    {
+        private readonly IRepository _repository;
+
+        public GameController(IRepository repository)
+        {
+            _repository = repository;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> Get(int page = 1, int take = 3)
+        {
+            int skipValue = (page - 1) * take;
+            var games = await _repository.GameGetAll(orderExpression: c => c.Name, isDescending: false, skip: skipValue, take: take).ToListAsync();
+
+            return Ok(games);
+        }
+
+        [HttpGet]
+        [Route("{id}")]
+        public async Task<IActionResult> Get(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+
+            if (game is null) return NotFound();
+
+            return Ok(game);
+        }
+
+        [HttpGet]
+        [Route("creation-options")]
+        public async Task<IActionResult> GetCreationOptions()
+        {
+            var categories = await _repository.CategoryGetAll().ToListAsync();
+            var platforms = await _repository.PlatformGetAll().ToListAsync();
+
+            var options = new GameCreationOptionsDto
+            {
+                Categories = categories.Select(c => new CategoryOptionDto { Id = c.Id, Name = c.Name }).ToList(),
+                Platforms = platforms.Select(p => new PlatformOptionDto { Id = p.Id, Name = p.Name }).ToList()
+            };
+
+            return Ok(options);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateGameDto createGameDto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var category = await _repository.CategoryGetAll(expression: c => c.Name == createGameDto.CategoryName)
+                .FirstOrDefaultAsync();
+
+            if (category is null)
+                return BadRequest($"Category '{createGameDto.CategoryName}' not found");
+
+            Game game = new Game
+            {
+                Name = createGameDto.Name,
+                Description = createGameDto.Description,
+                ReleaseDate = createGameDto.ReleaseDate,
+                Developer = createGameDto.Developer,
+                Publisher = createGameDto.Publisher,
+                Rating = createGameDto.Rating,
+                ImageURL = createGameDto.ImageURL,
+                CategoryId = category.Id,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _repository.AddAsync(game);
+            await _repository.SaveChangeAsync();
+
+            if (createGameDto.PlatformIds.Any())
+            {
+                foreach (var platformId in createGameDto.PlatformIds)
+                {
+                    var gamePlatform = new GamePlatform
+                    {
+                        GameId = game.Id,
+                        PlatformId = platformId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _repository.AddAsync(gamePlatform);
+                }
+                await _repository.SaveChangeAsync();
+            }
+
+            return StatusCode(StatusCodes.Status201Created, game);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+            if (game is null) return NotFound();
+
+            _repository.Delete(game);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, string name)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+
+            if (game is null) return NotFound();
+
+            game.Name = name;
+
+            _repository.Update(game);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+    }
+}

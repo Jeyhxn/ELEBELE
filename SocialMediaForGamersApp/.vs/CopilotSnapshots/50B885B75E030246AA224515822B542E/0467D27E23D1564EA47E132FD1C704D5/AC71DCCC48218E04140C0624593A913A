@@ -1,0 +1,18 @@
+﻿{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "Email": {
+    "SmtpHost": "smtp.gmail.com",
+    "SmtpPort": 587,
+    "SmtpUser": "your-email@gmail.com",
+    "SmtpPass": "your-app-password",
+    "FromEmail": "your-email@gmail.com",
+    "FromName": "Social Media for Gamers",
+    "FrontendUrl": "http://localhost:5173"
+  }
+}

@@ -1,0 +1,337 @@
+﻿import axios from 'axios'
+
+// Your .NET API is running on port 7271
+const API_BASE = 'https://localhost:7271/api'
+
+const apiClient = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: false,
+})
+
+// Error handler with detailed logging
+apiClient.interceptors.response.use(
+  response => {
+    console.log('✅ API Response:', response.config.url, response.status)
+    return response
+  },
+  error => {
+    console.error('❌ API Error Details:')
+    console.error('  Base URL:', API_BASE)
+    console.error('  Request URL:', error.config?.url)
+    console.error('  Status:', error.response?.status)
+    console.error('  Message:', error.message)
+    console.error('  Full Error:', error)
+    return Promise.reject(error)
+  }
+)
+
+// Test connection
+export const testConnection = async () => {
+  try {
+    console.log('Testing connection to:', API_BASE)
+    const response = await apiClient.get('/category?page=1&take=1')
+    return { success: true, message: `✅ Connected to ${API_BASE}` }
+  } catch (err) {
+    console.error('Connection failed:', err.message)
+    return { success: false, message: `❌ Cannot connect to ${API_BASE}: ${err.message}` }
+  }
+}
+
+// Categories
+export const getCategories = (page = 1, take = 10) =>
+  apiClient.get('/category', { params: { page, take } })
+
+export const getCategoryById = (id) =>
+  apiClient.get(`/category/${id}`)
+
+export const createCategory = (data) =>
+  apiClient.post('/category', data)
+
+export const deleteCategory = (id) =>
+  apiClient.delete(`/category/${id}`)
+
+// Games
+export const getGames = (page = 1, take = 20, filters = {}) => {
+  const params = { page, take }
+  if (filters.categoryId) params.categoryId = filters.categoryId
+  if (filters.platformIds?.length) {
+    filters.platformIds.forEach(id => {
+      params[`platformIds`] = params[`platformIds`] || []
+    })
+  }
+  // Build query string manually for array params
+  let queryParts = [`page=${page}`, `take=${take}`]
+  if (filters.search) queryParts.push(`search=${encodeURIComponent(filters.search)}`)
+  if (filters.categoryId) queryParts.push(`categoryId=${filters.categoryId}`)
+  if (filters.platformIds?.length) filters.platformIds.forEach(id => queryParts.push(`platformIds=${id}`))
+  if (filters.tagIds?.length) filters.tagIds.forEach(id => queryParts.push(`tagIds=${id}`))
+  return apiClient.get(`/game?${queryParts.join('&')}`)
+}
+
+export const getGameById = (id) =>
+  apiClient.get(`/game/${id}`)
+
+export const getTopRatedGames = (take = 10) =>
+  apiClient.get('/game/top-rated', { params: { take } })
+
+export const getMostPositiveGames = (take = 10) =>
+  apiClient.get('/game/most-positive', { params: { take } })
+
+export const getGameCreationOptions = () =>
+  apiClient.get('/game/creation-options')
+
+export const createGame = (data) => {
+  const isFormData = data instanceof FormData
+  return apiClient.post('/game', data, {
+    headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : {}
+  })
+}
+
+export const updateGame = (id, data) =>
+  apiClient.put(`/game/${id}`, data)
+
+export const deleteGame = (id) =>
+  apiClient.delete(`/game/${id}`)
+
+// Platforms
+export const getPlatforms = (page = 1, take = 10) =>
+  apiClient.get('/platform', { params: { page, take } })
+
+export const getPlatformById = (id) =>
+  apiClient.get(`/platform/${id}`)
+
+export const createPlatform = (data) =>
+  apiClient.post('/platform', data)
+
+export const updatePlatform = (id, data) =>
+  apiClient.put(`/platform/${id}`, data)
+
+export const deletePlatform = (id) =>
+  apiClient.delete(`/platform/${id}`)
+
+// Auth
+export const registerUser = (data) =>
+  apiClient.post('/auth/register', data)
+
+export const loginUser = (data) =>
+  apiClient.post('/auth/login', data)
+
+export const validateToken = (token) =>
+  apiClient.post('/auth/validate-token', token)
+
+export const verifyEmail = (token) =>
+  apiClient.get('/auth/verify-email', { params: { token } })
+
+export const resendVerification = (email) =>
+  apiClient.post('/auth/resend-verification', { email })
+
+// Comments
+export const getCommentsByGame = (gameId) =>
+  apiClient.get(`/comment/game/${gameId}`)
+
+export const createComment = (data) =>
+  apiClient.post('/comment', data)
+
+export const updateComment = (id, data) =>
+  apiClient.put(`/comment/${id}`, data)
+
+export const deleteComment = (id, userId) =>
+  apiClient.delete(`/comment/${id}`, { params: { userId } })
+
+// Admin
+export const getAdminStats = (adminId) =>
+  apiClient.get('/admin/stats', { params: { adminId } })
+
+export const getAdminUsers = (adminId) =>
+  apiClient.get('/admin/users', { params: { adminId } })
+
+export const toggleAdminRole = (userId, adminId) =>
+  apiClient.put(`/admin/users/${userId}/toggle-admin`, null, { params: { adminId } })
+
+export const adminDeleteUser = (userId, adminId) =>
+  apiClient.delete(`/admin/users/${userId}`, { params: { adminId } })
+
+export const syncGameCommunities = (adminId) =>
+  apiClient.post('/admin/sync-game-communities', null, { params: { adminId } })
+
+export const getTags = () =>
+  apiClient.get('/tag')
+
+export const createTag = (data) =>
+  apiClient.post('/tag', data)
+
+export const deleteTag = (id) =>
+  apiClient.delete(`/tag/${id}`)
+
+// Posts (Community)
+export const getPostFeed = (page = 1, take = 20, sort = 'new', communityId = null, search = null, userId = null) => {
+  const params = { page, take, sort }
+  if (communityId) params.communityId = communityId
+  if (search) params.search = search
+  if (userId) params.userId = userId
+  return apiClient.get('/post', { params })
+}
+
+export const getPostById = (id, userId = null) => {
+  const params = {}
+  if (userId) params.userId = userId
+  return apiClient.get(`/post/${id}`, { params })
+}
+
+export const getPostsByUser = (userId, page = 1, take = 20) =>
+  apiClient.get(`/post/user/${userId}`, { params: { page, take } })
+
+export const getCommentsByUser = (userId, page = 1, take = 20) =>
+  apiClient.get(`/post/user/${userId}/comments`, { params: { page, take } })
+
+export const recordPostView = (postId, userId) =>
+  apiClient.post(`/post/${postId}/view`, null, { params: { userId } })
+
+export const getViewHistory = (userId, page = 1, take = 50) =>
+  apiClient.get(`/post/user/${userId}/history`, { params: { page, take } })
+
+export const createPost = (data) => {
+  const isFormData = data instanceof FormData
+  return apiClient.post('/post', data, {
+    headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : {}
+  })
+}
+
+export const deletePost = (id, userId) =>
+  apiClient.delete(`/post/${id}`, { params: { userId } })
+
+export const votePost = (data) =>
+  apiClient.post('/post/vote', data)
+
+export const addPostComment = (data) =>
+  apiClient.post('/post/comment', data)
+
+export const editPostComment = (id, data) =>
+  apiClient.put(`/post/comment/${id}`, data)
+
+export const deletePostComment = (id, userId) =>
+  apiClient.delete(`/post/comment/${id}`, { params: { userId } })
+
+// Communities
+export const getCommunities = (search = null) => {
+  const params = {}
+  if (search) params.search = search
+  return apiClient.get('/community', { params })
+}
+
+export const getCommunityById = (id) =>
+  apiClient.get(`/community/${id}`)
+
+export const createCommunity = (data) =>
+  apiClient.post('/community', data)
+
+export const joinCommunity = (id, userId) =>
+  apiClient.post(`/community/${id}/join`, null, { params: { userId } })
+
+export const leaveCommunity = (id, userId) =>
+  apiClient.post(`/community/${id}/leave`, null, { params: { userId } })
+
+export const getMyCommunities = (userId) =>
+  apiClient.get('/community/my', { params: { userId } })
+
+export const deleteCommunity = (id, userId) =>
+  apiClient.delete(`/community/${id}`, { params: { userId } })
+
+// Notifications
+export const getNotifications = (userId) =>
+  apiClient.get('/notification', { params: { userId } })
+
+export const getUnreadNotificationCount = (userId) =>
+  apiClient.get('/notification/unread-count', { params: { userId } })
+
+export const markNotificationRead = (id, userId) =>
+  apiClient.put(`/notification/${id}/read`, null, { params: { userId } })
+
+export const markAllNotificationsRead = (userId) =>
+  apiClient.put('/notification/read-all', null, { params: { userId } })
+
+export const clearAllNotifications = (userId) =>
+  apiClient.delete('/notification/clear-all', { params: { userId } })
+
+// Settings
+export const changePassword = (data) =>
+  apiClient.put('/settings/change-password', data)
+
+export const changeProfileName = (data) =>
+  apiClient.put('/settings/change-profile-name', data)
+
+export const changeUsername = (data) =>
+  apiClient.put('/settings/change-username', data)
+
+export const deleteAccount = (data) =>
+  apiClient.delete('/settings/delete-account', { data })
+
+export const clearViewHistory = (userId) =>
+  apiClient.delete('/settings/clear-history', { params: { userId } })
+
+export const getNotificationPreferences = (userId) =>
+  apiClient.get('/settings/notification-preferences', { params: { userId } })
+
+export const updateNotificationPreferences = (data) =>
+  apiClient.put('/settings/notification-preferences', data)
+
+export const getMutedCommunities = (userId) =>
+  apiClient.get('/settings/muted-communities', { params: { userId } })
+
+export const muteCommunity = (userId, communityId) =>
+  apiClient.post('/settings/mute-community', null, { params: { userId, communityId } })
+
+export const unmuteCommunity = (userId, communityId) =>
+  apiClient.post('/settings/unmute-community', null, { params: { userId, communityId } })
+
+// Chat
+export const getChatUsers = (userId, search = '') =>
+  apiClient.get('/chat/users', { params: { userId, search } })
+
+export const getChatConversations = (userId) =>
+  apiClient.get('/chat/conversations', { params: { userId } })
+
+export const getChatMessages = (userId, otherUserId, page = 1, take = 50) =>
+  apiClient.get('/chat/messages', { params: { userId, otherUserId, page, take } })
+
+export const sendChatMessage = (data) =>
+  apiClient.post('/chat/send', data)
+
+export const getChatUnreadCount = (userId) =>
+  apiClient.get('/chat/unread-count', { params: { userId } })
+
+export const blockChatUser = (userId, blockedUserId) =>
+  apiClient.post('/chat/block', null, { params: { userId, blockedUserId } })
+
+export const unblockChatUser = (userId, blockedUserId) =>
+  apiClient.post('/chat/unblock', null, { params: { userId, blockedUserId } })
+
+export const getChatBlockStatus = (userId, otherUserId) =>
+  apiClient.get('/chat/block-status', { params: { userId, otherUserId } })
+
+// Friendships
+export const sendFriendRequest = (requesterId, addresseeId) =>
+  apiClient.post('/friendship/request', null, { params: { requesterId, addresseeId } })
+
+export const acceptFriendRequest = (id, userId) =>
+  apiClient.put(`/friendship/${id}/accept`, null, { params: { userId } })
+
+export const declineFriendRequest = (id, userId) =>
+  apiClient.put(`/friendship/${id}/decline`, null, { params: { userId } })
+
+export const removeFriend = (id, userId) =>
+  apiClient.delete(`/friendship/${id}`, { params: { userId } })
+
+export const getFriends = (userId) =>
+  apiClient.get('/friendship/friends', { params: { userId } })
+
+export const getPendingFriendRequests = (userId) =>
+  apiClient.get('/friendship/requests', { params: { userId } })
+
+export const getFriendshipStatus = (userId, otherUserId) =>
+  apiClient.get('/friendship/status', { params: { userId, otherUserId } })
+
+export default apiClient

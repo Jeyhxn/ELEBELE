@@ -1,0 +1,116 @@
+﻿import { useState, useEffect } from 'react'
+import { getCategories, getPlatforms, getTags } from '../api'
+
+export default function FilterSidebar({ filters, onFilterChange }) {
+  const [categories, setCategories] = useState([])
+  const [platforms, setPlatforms] = useState([])
+  const [tags, setTags] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadOptions()
+  }, [])
+
+  const loadOptions = async () => {
+    try {
+      const [catRes, platRes, tagRes] = await Promise.all([
+        getCategories(1, 100),
+        getPlatforms(1, 100),
+        getTags()
+      ])
+      setCategories(Array.isArray(catRes.data) ? catRes.data : catRes.data.items ?? [])
+      setPlatforms(Array.isArray(platRes.data) ? platRes.data : platRes.data.items ?? [])
+      setTags(tagRes.data)
+    } catch (err) {
+      console.error('Failed to load filter options:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const toggleArrayFilter = (key, id) => {
+    const current = filters[key] || []
+    const updated = current.includes(id)
+      ? current.filter(x => x !== id)
+      : [...current, id]
+    onFilterChange({ ...filters, [key]: updated })
+  }
+
+  const handleCategoryChange = (e) => {
+    const value = e.target.value ? parseInt(e.target.value) : null
+    onFilterChange({ ...filters, categoryId: value })
+  }
+
+  const handleSearchChange = (e) => {
+    onFilterChange({ ...filters, search: e.target.value })
+  }
+
+  const clearAll = () => {
+    onFilterChange({ ...filters, search: '', categoryId: null, platformIds: [], tagIds: [] })
+  }
+
+  const hasActiveFilters = filters.categoryId || filters.platformIds?.length || filters.tagIds?.length
+
+  if (loading) return <div className="filter-sidebar"><p>Loading filters...</p></div>
+
+  return (
+    <div className="filter-sidebar">
+      <div className="filter-header">
+        <h3><img src="/assets/icons/search.png" alt="" className="filter-icon" /> Filters</h3>
+        {hasActiveFilters && (
+          <button className="filter-clear-btn" onClick={clearAll}>
+            Clear All
+          </button>
+        )}
+      </div>
+
+      {/* Category */}
+      <div className="filter-section">
+        <h4><img src="/assets/icons/icons8-category-48.png" alt="" className="filter-icon" /> Category</h4>
+        <select
+          value={filters.categoryId || ''}
+          onChange={handleCategoryChange}
+        >
+          <option value="">All Categories</option>
+          {categories.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Platforms */}
+      <div className="filter-section">
+        <h4><img src="/assets/icons/icons8-pc-50.png" alt="" className="filter-icon" /> Platforms</h4>
+        <div className="filter-chips">
+          {platforms.map(p => (
+            <button
+              key={p.id}
+              className={`filter-chip ${(filters.platformIds || []).includes(p.id) ? 'active' : ''}`}
+              onClick={() => toggleArrayFilter('platformIds', p.id)}
+            >
+              {p.name}
+            </button>
+          ))}
+          {platforms.length === 0 && <span className="filter-empty">No platforms</span>}
+        </div>
+      </div>
+
+      {/* Tags */}
+      <div className="filter-section">
+        <h4><img src="/assets/icons/icons8-tag-48.png" alt="" className="filter-icon" /> Tags</h4>
+        <div className="filter-chips">
+          {tags.map(t => (
+            <button
+              key={t.id}
+              className={`filter-chip ${(filters.tagIds || []).includes(t.id) ? 'active' : ''}`}
+              onClick={() => toggleArrayFilter('tagIds', t.id)}
+            >
+              {t.name}
+            </button>
+          ))}
+          {tags.length === 0 && <span className="filter-empty">No tags</span>}
+        </div>
+      </div>
+    </div>
+  )
+}

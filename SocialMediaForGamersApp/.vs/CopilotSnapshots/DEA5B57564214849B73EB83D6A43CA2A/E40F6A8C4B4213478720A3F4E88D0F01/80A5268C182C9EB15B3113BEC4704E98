@@ -1,0 +1,356 @@
+﻿import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getGameById, getCommentsByGame, createComment, updateComment, deleteComment } from '../api'
+import { useFavorites } from '../context/FavoriteContext'
+import { useAuth } from '../context/AuthContext'
+
+export default function GameDetail() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { isFavorite, toggleFavorite } = useFavorites()
+  const { user } = useAuth()
+  const [game, setGame] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [isFav, setIsFav] = useState(false)
+  const [comments, setComments] = useState([])
+  const [newComment, setNewComment] = useState('')
+  const [commentLoading, setCommentLoading] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editContent, setEditContent] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [showMoreDetails, setShowMoreDetails] = useState(false)
+
+  useEffect(() => {
+    fetchGame()
+    fetchComments()
+  }, [id])
+
+  const fetchGame = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('Fetching game with ID:', id)
+      const response = await getGameById(parseInt(id))
+      console.log('Full game data:', response.data)
+      console.log('Category:', response.data.category)
+      console.log('GamePlatforms:', response.data.gamePlatforms)
+      
+      if (response.data.gamePlatforms && response.data.gamePlatforms.length > 0) {
+        console.log('First platform:', response.data.gamePlatforms[0])
+        console.log('First platform data:', response.data.gamePlatforms[0].platform)
+      }
+
+      setGame(response.data)
+      setIsFav(isFavorite(parseInt(id)))
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load game: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholderImage(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/500x600/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  const fetchComments = async () => {
+    try {
+      const response = await getCommentsByGame(parseInt(id))
+      setComments(response.data)
+    } catch (err) {
+      console.error('Failed to load comments:', err)
+    }
+  }
+
+  const handleAddComment = async (e) => {
+    e.preventDefault()
+    if (!newComment.trim() || !user) return
+
+    try {
+      setCommentLoading(true)
+      const response = await createComment({
+        content: newComment.trim(),
+        gameId: parseInt(id),
+        userId: user.id
+      })
+      setComments(prev => [response.data, ...prev])
+      setNewComment('')
+    } catch (err) {
+      console.error('Failed to add comment:', err)
+    } finally {
+      setCommentLoading(false)
+    }
+  }
+
+  const handleDeleteComment = async (commentId) => {
+    try {
+      await deleteComment(commentId, user.id)
+      setComments(prev => prev.filter(c => c.id !== commentId))
+    } catch (err) {
+      console.error('Failed to delete comment:', err)
+    }
+  }
+
+  const handleEditComment = (comment) => {
+    setEditingCommentId(comment.id)
+    setEditContent(comment.content)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null)
+    setEditContent('')
+  }
+
+  const handleSaveEdit = async (commentId) => {
+    if (!editContent.trim()) return
+    try {
+      const response = await updateComment(commentId, {
+        content: editContent.trim(),
+        userId: user.id
+      })
+      setComments(prev => prev.map(c => c.id === commentId ? response.data : c))
+      setEditingCommentId(null)
+      setEditContent('')
+    } catch (err) {
+      console.error('Failed to edit comment:', err)
+    }
+  }
+
+  if (loading) return <div className="loading">Loading game details...</div>
+  if (error) return <div className="error">{error}</div>
+  if (!game) return <div className="error">Game not found</div>
+
+  const handleToggleFavorite = () => {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    toggleFavorite(game)
+    setIsFav(!isFav)
+  }
+
+  const hasPlatforms = game.gamePlatforms && game.gamePlatforms.length > 0
+  const hasCategory = game.category && game.category.name
+
+  return (
+    <div className="game-detail">
+      <div className="detail-header">
+        <button className="back-button" onClick={() => navigate('/')}>
+          ← Back to Games
+        </button>
+        {user && (
+          <button 
+            className={`favorite-button ${isFav ? 'active' : ''}`}
+            onClick={handleToggleFavorite}
+            title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            {isFav ? '❤️' : '🤍'}
+          </button>
+        )}
+      </div>
+
+      <div className="detail-container">
+        <div className="detail-image">
+          <img 
+            src={selectedImage || getImageUrl(game.imageURL, game.name)}
+            alt={game.name}
+            onError={(e) => {
+              e.target.src = getPlaceholderImage(game.name)
+            }}
+          />
+          {game.gameImages && game.gameImages.length > 0 && (
+            <div className="image-thumbnails">
+              <div
+                className={`thumbnail ${!selectedImage ? 'active' : ''}`}
+                onClick={() => setSelectedImage(null)}
+              >
+                <img
+                  src={getImageUrl(game.imageURL, game.name)}
+                  alt="Main"
+                  onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+                />
+              </div>
+              {game.gameImages.map(gi => (
+                <div
+                  key={gi.id}
+                  className={`thumbnail ${selectedImage === getImageUrl(gi.imageURL, game.name) ? 'active' : ''}`}
+                  onClick={() => setSelectedImage(getImageUrl(gi.imageURL, game.name))}
+                >
+                  <img
+                    src={getImageUrl(gi.imageURL, game.name)}
+                    alt="Screenshot"
+                    onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
+
+        <div className="detail-info">
+          <h1>{game.name}</h1>
+
+          <div className="rating-badge">
+            ⭐ {game.rating}/100
+          </div>
+
+          <section className="detail-section">
+            <h2>Description</h2>
+            <p>{game.description}</p>
+          </section>
+
+          <button
+            className="more-details-toggle"
+            onClick={() => setShowMoreDetails(prev => !prev)}
+          >
+            {showMoreDetails ? '▲ Hide Details' : '▼ More Details'}
+          </button>
+
+          {showMoreDetails && (
+            <div className="more-details-panel">
+              <section className="detail-section">
+                <h3>Release Date</h3>
+                <p>{new Date(game.releaseDate).toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}</p>
+              </section>
+
+              <div className="detail-grid">
+                <section className="detail-section">
+                  <h3>Developer</h3>
+                  <p>{game.developer}</p>
+                </section>
+
+                <section className="detail-section">
+                  <h3>Publisher</h3>
+                  <p>{game.publisher}</p>
+                </section>
+              </div>
+
+              {hasCategory && (
+                <section className="detail-section">
+                  <h3>Category</h3>
+                  <p className="category-tag">{game.category.name}</p>
+                </section>
+              )}
+
+              {hasPlatforms && (
+                <section className="detail-section">
+                  <h3>Available on Platforms</h3>
+                  <div className="platforms-list">
+                    {game.gamePlatforms.map((gp, index) => {
+                      const platformName = gp.platform?.name || gp.platformName || `Platform ${gp.platformId}`
+                      return (
+                        <span key={gp.id || index} className="platform-tag">
+                          🖥️ {platformName}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {!hasCategory && !hasPlatforms && (
+                <div style={{ color: '#999', marginTop: '1rem', fontSize: '0.9rem' }}>
+                  <p>No category or platforms data available</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <section className="comments-section">
+        <h2>💬 Comments</h2>
+
+        {user ? (
+          <form className="comment-form" onSubmit={handleAddComment}>
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Write a comment..."
+              rows={3}
+              disabled={commentLoading}
+            />
+            <button type="submit" disabled={commentLoading || !newComment.trim()}>
+              {commentLoading ? 'Posting...' : 'Post Comment'}
+            </button>
+          </form>
+        ) : (
+          <p className="comment-login-prompt">
+            <a href="/login">Sign in</a> to leave a comment.
+          </p>
+        )}
+
+        <div className="comments-list">
+          {comments.length === 0 ? (
+            <p className="no-comments">No comments yet. Be the first!</p>
+          ) : (
+            comments.map(comment => (
+              <div key={comment.id} className="comment-card">
+                <div className="comment-header">
+                  <span className="comment-author">👤 {comment.username}</span>
+                  <span className="comment-date">
+                    {new Date(comment.createdAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                </div>
+                {editingCommentId === comment.id ? (
+                  <div className="comment-edit-form">
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      rows={3}
+                    />
+                    <div className="comment-edit-actions">
+                      <button onClick={() => handleSaveEdit(comment.id)} disabled={!editContent.trim()}>Save</button>
+                      <button onClick={handleCancelEdit} className="comment-cancel-btn">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="comment-content">{comment.content}</p>
+                )}
+                {user && user.id === comment.userId && editingCommentId !== comment.id && (
+                  <div className="comment-actions">
+                    <button
+                      className="comment-edit"
+                      onClick={() => handleEditComment(comment)}
+                      title="Edit comment"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="comment-delete"
+                      onClick={() => handleDeleteComment(comment.id)}
+                      title="Delete comment"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}

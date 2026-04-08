@@ -1,0 +1,189 @@
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getTopRatedGames, getMostPositiveGames, getCommentsByGame } from '../api'
+
+function getImageUrl(imageURL, gameName) {
+  if (!imageURL) return getPlaceholder(gameName)
+  if (imageURL.startsWith('http')) return imageURL
+  return `https://localhost:7271/images/${imageURL}`
+}
+
+function getPlaceholder(name) {
+  const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+  const color = colors[(name?.charCodeAt(0) ?? 0) % colors.length]
+  return `https://via.placeholder.com/600x340/${color}/FFFFFF?text=${encodeURIComponent(name || 'Game')}`
+}
+
+function CommunityRecommends({ games }) {
+  const [idx, setIdx] = useState(0)
+  const [reviews, setReviews] = useState({})
+  const navigate = useNavigate()
+  const timerRef = useRef(null)
+
+  const startTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (!games.length) return
+    timerRef.current = setInterval(() => setIdx(i => (i + 1) % games.length), 6000)
+  }, [games.length])
+
+  useEffect(() => {
+    if (!games.length) return
+    games.forEach(game => {
+      getCommentsByGame(game.id)
+        .then(res => {
+          const positive = res.data.filter(c => c.isPositive)
+          const pick = positive[0] || res.data[0]
+          if (pick) setReviews(prev => ({ ...prev, [game.id]: pick }))
+        })
+        .catch(() => {})
+    })
+    startTimer()
+    return () => clearInterval(timerRef.current)
+  }, [games, startTimer])
+
+  const go = useCallback((newIdx) => {
+    setIdx(newIdx)
+    startTimer()
+  }, [startTimer])
+
+  if (!games.length) return null
+
+  const game = games[idx]
+  const review = reviews[game.id]
+
+  return (
+    <div className="cr-wrap">
+      <div className="cr-header">
+        <div>
+          <div className="cr-title">THE COMMUNITY RECOMMENDS</div>
+          <div className="cr-subtitle">THESE GAMES TODAY</div>
+        </div>
+        <button className="cr-explore-btn">CUSTOMIZE, EXPLORE BY TAG, &amp; MORE</button>
+      </div>
+
+      <div className="cr-carousel">
+        <button className="cr-nav" onClick={() => go((idx - 1 + games.length) % games.length)}>‹</button>
+
+        <div className="cr-slide" onClick={() => navigate(`/game/${game.id}`)}>
+          <div className="cr-image">
+            <img
+              src={getImageUrl(game.imageURL, game.name)}
+              alt={game.name}
+              onError={e => { e.target.src = getPlaceholder(game.name) }}
+            />
+          </div>
+          <div className="cr-review">
+            {review ? (
+              <>
+                <p className="cr-quote">"{review.content}"</p>
+                <div className="cr-reviewer">
+                  <span className="cr-reviewer-avatar">
+                    {review.username?.charAt(0).toUpperCase()}
+                  </span>
+                  <div className="cr-reviewer-info">
+                    <span className="cr-reviewer-name">{review.username}</span>
+                    <span className="cr-reviewer-sub">
+                      {review.isPositive ? 'Recommended' : 'Reviewed'} this game
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="cr-quote cr-no-review">
+                Highly recommended by the community
+              </p>
+            )}
+          </div>
+        </div>
+
+        <button className="cr-nav" onClick={() => go((idx + 1) % games.length)}>›</button>
+      </div>
+
+      <div className="cr-dots">
+        {games.map((_, i) => (
+          <button key={i} className={`cr-dot${i === idx ? ' active' : ''}`} onClick={() => go(i)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function GameRow({ title, icon, games }) {
+  const navigate = useNavigate()
+  const [favorites, setFavorites] = useState({})
+
+  const toggleFavorite = (gameId, e) => {
+    e.stopPropagation()
+    setFavorites(prev => ({ ...prev, [gameId]: !prev[gameId] }))
+  }
+
+  if (!games.length) return null
+
+  return (
+    <div className="featured-section">
+      <h2>{icon} {title}</h2>
+      <div className="featured-scroll">
+        {games.map(game => (
+          <div
+            key={game.id}
+            className="featured-card"
+            onClick={() => navigate(`/game/${game.id}`)}
+          >
+            <button
+              className={`fc-wishlist ${favorites[game.id] ? 'active' : ''}`}
+              onClick={e => toggleFavorite(game.id, e)}
+              title="Add to Wishlist"
+            >
+              ♡
+            </button>
+            <div className="fc-img">
+              <img
+                src={getImageUrl(game.imageURL, game.name)}
+                alt={game.name}
+                onError={e => { e.target.src = getPlaceholder(game.name) }}
+              />
+            </div>
+            <div className="fc-content">
+              <div className="fc-top">
+                <h4>{game.name}</h4>
+              </div>
+              <div className="fc-tags">
+                {game.category?.name && <span className="fc-tag">{game.category.name}</span>}
+                {game.rating > 0 && <span className="fc-tag"><img src="/assets/icons/star.png" alt="" className="inline-icon" /> {game.rating}</span>}
+              </div>
+              <span className="fc-date">
+                {game.releaseDate ? new Date(game.releaseDate).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                }) : 'Coming Soon'}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function FeaturedSections() {
+  const [topRated, setTopRated] = useState([])
+  const [mostPositive, setMostPositive] = useState([])
+
+  useEffect(() => {
+    Promise.all([getTopRatedGames(10), getMostPositiveGames(10)])
+      .then(([ratedRes, positiveRes]) => {
+        setTopRated(ratedRes.data)
+        setMostPositive(positiveRes.data)
+      })
+      .catch(err => console.error('Failed to load featured:', err))
+  }, [])
+
+  return (
+    <div className="featured-sections">
+      <CommunityRecommends games={mostPositive.slice(0, 6)} />
+      <GameRow title="Top Rated Games" icon="🏆" games={topRated} />
+      <GameRow title="Most Loved by Community" icon="👍" games={mostPositive} />
+    </div>
+  )
+}

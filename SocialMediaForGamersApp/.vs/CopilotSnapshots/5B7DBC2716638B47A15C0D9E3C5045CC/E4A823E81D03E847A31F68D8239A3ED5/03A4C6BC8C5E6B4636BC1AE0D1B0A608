@@ -1,0 +1,494 @@
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getGameById, getCommentsByGame, createComment, updateComment, deleteComment } from '../api'
+import { useFavorites } from '../context/FavoriteContext'
+import { useAuth } from '../context/AuthContext'
+
+export default function GameDetail() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { isFavorite, toggleFavorite } = useFavorites()
+  const { user } = useAuth()
+  const [game, setGame] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [isFav, setIsFav] = useState(false)
+  const [comments, setComments] = useState([])
+  const [newComment, setNewComment] = useState('')
+  const [commentIsPositive, setCommentIsPositive] = useState(true)
+  const [commentLoading, setCommentLoading] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editContent, setEditContent] = useState('')
+  const [editIsPositive, setEditIsPositive] = useState(true)
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [showMoreDetails, setShowMoreDetails] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const thumbsRef = useRef(null)
+
+  useEffect(() => {
+    fetchGame()
+    fetchComments()
+  }, [id])
+
+  const fetchGame = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('Fetching game with ID:', id)
+      const response = await getGameById(parseInt(id))
+      console.log('Full game data:', response.data)
+      console.log('Category:', response.data.category)
+      console.log('GamePlatforms:', response.data.gamePlatforms)
+      
+      if (response.data.gamePlatforms && response.data.gamePlatforms.length > 0) {
+        console.log('First platform:', response.data.gamePlatforms[0])
+        console.log('First platform data:', response.data.gamePlatforms[0].platform)
+      }
+
+      setGame(response.data)
+      setIsFav(isFavorite(parseInt(id)))
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load game: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholderImage(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/500x600/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  const fetchComments = async () => {
+    try {
+      const response = await getCommentsByGame(parseInt(id))
+      setComments(response.data)
+    } catch (err) {
+      console.error('Failed to load comments:', err)
+    }
+  }
+
+  const handleAddComment = async (e) => {
+    e.preventDefault()
+    if (!newComment.trim() || !user) return
+
+    try {
+      setCommentLoading(true)
+      const response = await createComment({
+        content: newComment.trim(),
+        isPositive: commentIsPositive,
+        gameId: parseInt(id),
+        userId: user.id
+      })
+      setComments(prev => [response.data, ...prev])
+      setNewComment('')
+      setCommentIsPositive(true)
+    } catch (err) {
+      console.error('Failed to add comment:', err)
+    } finally {
+      setCommentLoading(false)
+    }
+  }
+
+  const handleDeleteComment = async (commentId) => {
+    try {
+      await deleteComment(commentId, user.id)
+      setComments(prev => prev.filter(c => c.id !== commentId))
+    } catch (err) {
+      console.error('Failed to delete comment:', err)
+    }
+  }
+
+  const handleEditComment = (comment) => {
+    setEditingCommentId(comment.id)
+    setEditContent(comment.content)
+    setEditIsPositive(comment.isPositive)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null)
+    setEditContent('')
+    setEditIsPositive(true)
+  }
+
+  const handleSaveEdit = async (commentId) => {
+    if (!editContent.trim()) return
+    try {
+      const response = await updateComment(commentId, {
+        content: editContent.trim(),
+        isPositive: editIsPositive,
+        userId: user.id
+      })
+      setComments(prev => prev.map(c => c.id === commentId ? response.data : c))
+      setEditingCommentId(null)
+      setEditContent('')
+    } catch (err) {
+      console.error('Failed to edit comment:', err)
+    }
+  }
+
+  if (loading) return <div className="loading">Loading game details...</div>
+  if (error) return <div className="error">{error}</div>
+  if (!game) return <div className="error">Game not found</div>
+
+  const handleToggleFavorite = () => {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    toggleFavorite(game)
+    setIsFav(!isFav)
+  }
+
+  const hasPlatforms = game.gamePlatforms && game.gamePlatforms.length > 0
+  const hasCategory = game.category && game.category.name
+  const hasTags = game.gameTags && game.gameTags.length > 0
+
+  const positiveCount = comments.filter(c => c.isPositive).length
+  const negativeCount = comments.filter(c => !c.isPositive).length
+  const totalComments = comments.length
+  const reviewLabel = totalComments === 0
+    ? 'No Reviews'
+    : positiveCount > negativeCount
+      ? 'Positive'
+      : positiveCount < negativeCount
+        ? 'Negative'
+        : 'Mixed'
+  const reviewClass = totalComments === 0
+    ? 'none'
+    : positiveCount > negativeCount
+      ? 'positive'
+      : positiveCount < negativeCount
+        ? 'negative'
+        : 'mixed'
+
+  const allImages = [
+    ...(game.gameImages || []).map(gi => ({ id: gi.id, url: getImageUrl(gi.imageURL, game.name) }))
+  ]
+  const mainImageUrl = getImageUrl(game.imageURL, game.name)
+  const displayImage = selectedImage || (allImages.length > 0 ? allImages[0].url : mainImageUrl)
+
+  const navigateImage = (dir) => {
+    if (allImages.length === 0) return
+    const urls = allImages.map(img => img.url)
+    const currentIdx = urls.indexOf(displayImage)
+    const nextIdx = currentIdx === -1
+      ? (dir === 1 ? 0 : urls.length - 1)
+      : (currentIdx + dir + urls.length) % urls.length
+    setSelectedImage(urls[nextIdx])
+    if (thumbsRef.current) {
+      const container = thumbsRef.current
+      const thumb = container.children[nextIdx]
+      if (thumb) {
+        const thumbLeft = thumb.offsetLeft - container.offsetLeft
+        const thumbRight = thumbLeft + thumb.offsetWidth
+        const scrollLeft = container.scrollLeft
+        const containerWidth = container.offsetWidth
+        if (thumbLeft < scrollLeft) {
+          container.scrollTo({ left: thumbLeft, behavior: 'smooth' })
+        } else if (thumbRight > scrollLeft + containerWidth) {
+          container.scrollTo({ left: thumbRight - containerWidth, behavior: 'smooth' })
+        }
+      }
+    }
+  }
+
+  const handleThumbClick = (url) => {
+    setSelectedImage(url)
+  }
+
+  return (
+    <div className="sd-page">
+      {/* Fullscreen overlay */}
+      {isFullscreen && (
+        <div className="sd-fs-overlay" onClick={() => setIsFullscreen(false)}>
+          {allImages.length > 1 && (
+            <button className="sd-fs-nav sd-fs-nav-left" onClick={e => { e.stopPropagation(); navigateImage(-1) }}>‹</button>
+          )}
+          <img
+            src={displayImage}
+            alt={game.name}
+            onClick={e => e.stopPropagation()}
+            onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+          />
+          {allImages.length > 1 && (
+            <button className="sd-fs-nav sd-fs-nav-right" onClick={e => { e.stopPropagation(); navigateImage(1) }}>›</button>
+          )}
+          <button className="sd-fs-close" onClick={() => setIsFullscreen(false)}>✕</button>
+        </div>
+      )}
+
+      {/* Breadcrumb + title */}
+      <div className="sd-top-bar">
+        <button className="sd-back" onClick={() => navigate('/')}>
+          <span className="sd-back-arrow">‹</span> All Games
+        </button>
+        {user && (
+          <button
+            className={`sd-fav-btn ${isFav ? 'active' : ''}`}
+            onClick={handleToggleFavorite}
+            title={isFav ? 'Remove from wishlist' : 'Add to wishlist'}
+          >
+            <img src="/assets/icons/wish.png" alt="" className="sd-fav-icon" />
+          </button>
+        )}
+      </div>
+      <h1 className="sd-game-title">{game.name}</h1>
+
+      {/* Main two-column area */}
+      <div className="sd-hero">
+        {/* LEFT: gallery */}
+        <div className="sd-gallery">
+          <div className="sd-main-image" onClick={() => setIsFullscreen(true)}>
+            <img
+              src={displayImage}
+              alt={game.name}
+              onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+            />
+            <div className="sd-img-controls" onClick={e => e.stopPropagation()}>
+              <button className="sd-img-ctrl-btn" onClick={() => setIsFullscreen(true)} title="Fullscreen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+              </button>
+            </div>
+          </div>
+          {allImages.length > 0 && (
+            <div className="sd-thumbs-wrap">
+              <button className="sd-thumb-nav sd-thumb-nav-left" onClick={() => navigateImage(-1)}>‹</button>
+              <div className="sd-thumbs" ref={thumbsRef}>
+                {allImages.map(img => (
+                  <div
+                    key={img.id}
+                    className={`sd-thumb ${displayImage === img.url ? 'active' : ''}`}
+                    onClick={() => handleThumbClick(img.url)}
+                  >
+                    <img
+                      src={img.url}
+                      alt=""
+                      onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button className="sd-thumb-nav sd-thumb-nav-right" onClick={() => navigateImage(1)}>›</button>
+            </div>
+          )}
+          {hasPlatforms && (
+            <div className="sd-platforms-section">
+              <h2>Available On</h2>
+              <div className="sd-platform-list">
+                {game.gamePlatforms.map((gp, i) => (
+                  <span key={gp.id || i} className="sd-platform-chip">
+                    {gp.platform?.name || `Platform ${gp.platformId}`}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: info panel */}
+        <div className="sd-info-panel">
+          <div className="sd-cover">
+            <img
+              src={mainImageUrl}
+              alt={game.name}
+              onError={(e) => { e.target.src = getPlaceholderImage(game.name) }}
+            />
+          </div>
+
+          <p className="sd-description">{game.description}</p>
+
+          <div className="sd-meta-table">
+            <div className="sd-meta-row">
+              <span className="sd-meta-label sd-label-reviews">REVIEWS:</span>
+              <span className={`sd-meta-value sd-review-${reviewClass}`}>
+                {reviewLabel}{totalComments > 0 && ` (${totalComments})`}
+              </span>
+            </div>
+            <div className="sd-meta-row">
+              <span className="sd-meta-label sd-label-release">RELEASE DATE:</span>
+              <span className="sd-meta-value">
+                {game.releaseDate
+                  ? new Date(game.releaseDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                  : 'TBA'}
+              </span>
+            </div>
+            <div className="sd-meta-row">
+              <span className="sd-meta-label sd-label-dev">DEVELOPER:</span>
+              <span className="sd-meta-value sd-link">{game.developer}</span>
+            </div>
+            <div className="sd-meta-row">
+              <span className="sd-meta-label sd-label-pub">PUBLISHER:</span>
+              <span className="sd-meta-value sd-link">{game.publisher}</span>
+            </div>
+          </div>
+
+          {(hasTags || hasCategory) && (
+            <div className="sd-tags-area">
+              <span className="sd-tags-label">Popular user-defined tags for this product:</span>
+              <div className="sd-tag-list">
+                {hasCategory && <span className="sd-tag">{game.category.name}</span>}
+                {hasTags && game.gameTags.map((gt, i) => (
+                  <span key={gt.id || i} className="sd-tag">{gt.tag?.name || `Tag ${gt.tagId}`}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="sd-score-bar">
+            <div className={`sd-score-box ${game.rating > 70 ? 'sd-score-green' : game.rating > 50 ? 'sd-score-yellow' : 'sd-score-red'}`}>
+              <span className="sd-score-number">{game.rating}</span>
+            </div>
+            <div className="sd-score-info">
+              <span className="sd-score-site">Gameily Score</span>
+              <span className="sd-score-sub">Based on game rating</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* About This Game */}
+      {game.aboutThisGame && (
+        <section className="sd-about">
+          <h2>About This Game</h2>
+          <p>{game.aboutThisGame}</p>
+        </section>
+      )}
+
+      {/* Reviews */}
+      <section className="sr-section">
+        <h2 className="sr-heading">Customer Reviews</h2>
+
+        {user ? (
+          <form className="sr-form" onSubmit={handleAddComment}>
+            <div className="sr-form-sentiment">
+              <button
+                type="button"
+                className={`sr-sentiment-btn ${commentIsPositive ? 'active positive' : ''}`}
+                onClick={() => setCommentIsPositive(true)}
+              >
+                <img src="/assets/icons/like.png" alt="" className="sr-icon" /> Recommended
+              </button>
+              <button
+                type="button"
+                className={`sr-sentiment-btn ${!commentIsPositive ? 'active negative' : ''}`}
+                onClick={() => setCommentIsPositive(false)}
+              >
+                <img src="/assets/icons/dislike.png" alt="" className="sr-icon" /> Not Recommended
+              </button>
+            </div>
+            <textarea
+              className="sr-form-textarea"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Write your review..."
+              rows={3}
+              disabled={commentLoading}
+            />
+            <button className="sr-form-submit" type="submit" disabled={commentLoading || !newComment.trim()}>
+              {commentLoading ? 'Posting...' : 'Post Review'}
+            </button>
+          </form>
+        ) : (
+          <p className="sr-login-prompt">
+            <a href="/login">Sign in</a> to leave a review.
+          </p>
+        )}
+
+        <div className="sr-list">
+          {comments.length === 0 ? (
+            <p className="sr-empty">No reviews yet. Be the first to review!</p>
+          ) : (
+            comments.map(comment => (
+              <div key={comment.id} className="sr-card">
+                <div className="sr-card-left">
+                  <div className="sr-avatar">
+                    {(comment.username || '?')[0].toUpperCase()}
+                  </div>
+                  <span className="sr-username">{comment.username}</span>
+                  <span className="sr-review-count">1 review</span>
+                </div>
+                <div className="sr-card-right">
+                  <div className={`sr-verdict ${comment.isPositive ? 'positive' : 'negative'}`}>
+                    <img
+                      src={comment.isPositive ? '/assets/icons/like.png' : '/assets/icons/dislike.png'}
+                      alt=""
+                      className="sr-verdict-icon-img"
+                    />
+                    <span className="sr-verdict-text">{comment.isPositive ? 'Recommended' : 'Not Recommended'}</span>
+                  </div>
+                  <span className="sr-date">
+                    POSTED: {new Date(comment.createdAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    }).toUpperCase()}
+                  </span>
+                  {editingCommentId === comment.id ? (
+                    <div className="sr-edit-form">
+                      <div className="sr-form-sentiment">
+                        <button
+                          type="button"
+                          className={`sr-sentiment-btn ${editIsPositive ? 'active positive' : ''}`}
+                          onClick={() => setEditIsPositive(true)}
+                        >
+                          <img src="/assets/icons/like.png" alt="" className="sr-icon" /> Recommended
+                        </button>
+                        <button
+                          type="button"
+                          className={`sr-sentiment-btn ${!editIsPositive ? 'active negative' : ''}`}
+                          onClick={() => setEditIsPositive(false)}
+                        >
+                          <img src="/assets/icons/dislike.png" alt="" className="sr-icon" /> Not Recommended
+                        </button>
+                      </div>
+                      <textarea
+                        className="sr-form-textarea"
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        rows={3}
+                      />
+                      <div className="sr-edit-actions">
+                        <button className="sr-form-submit" onClick={() => handleSaveEdit(comment.id)} disabled={!editContent.trim()}>Save</button>
+                        <button className="sr-edit-cancel" onClick={handleCancelEdit}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="sr-review-text">{comment.content}</p>
+                  )}
+                  {user && user.id === comment.userId && editingCommentId !== comment.id && (
+                    <div className="sr-actions">
+                      <button
+                        className="sr-action-btn"
+                        onClick={() => handleEditComment(comment)}
+                        title="Edit review"
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        className="sr-action-btn sr-action-delete"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        title="Delete review"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}

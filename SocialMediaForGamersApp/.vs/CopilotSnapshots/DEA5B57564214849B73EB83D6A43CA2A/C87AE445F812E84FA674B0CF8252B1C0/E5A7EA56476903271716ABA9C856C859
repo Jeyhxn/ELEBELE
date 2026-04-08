@@ -1,0 +1,147 @@
+﻿import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getGameById } from '../api'
+import { useFavorites } from '../context/FavoriteContext'
+
+export default function GameDetail() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { isFavorite, toggleFavorite } = useFavorites()
+  const [game, setGame] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [isFav, setIsFav] = useState(false)
+
+  useEffect(() => {
+    fetchGame()
+  }, [id])
+
+  const fetchGame = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('Fetching game with ID:', id)
+      const response = await getGameById(parseInt(id))
+      console.log('Full game data:', response.data)
+      console.log('Category:', response.data.category)
+      console.log('GamePlatforms:', response.data.gamePlatforms)
+      
+      if (response.data.gamePlatforms && response.data.gamePlatforms.length > 0) {
+        console.log('First platform:', response.data.gamePlatforms[0])
+        console.log('First platform data:', response.data.gamePlatforms[0].platform)
+      }
+
+      setGame(response.data)
+      setIsFav(isFavorite(parseInt(id)))
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load game: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholderImage(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/500x600/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  if (loading) return <div className="loading">Loading game details...</div>
+  if (error) return <div className="error">{error}</div>
+  if (!game) return <div className="error">Game not found</div>
+
+  const hasPlatforms = game.gamePlatforms && game.gamePlatforms.length > 0
+  const hasCategory = game.category && game.category.name
+
+  return (
+    <div className="game-detail">
+      <button className="back-button" onClick={() => navigate('/')}>
+        ← Back to Games
+      </button>
+
+      <div className="detail-container">
+        <div className="detail-image">
+          <img 
+            src={getImageUrl(game.imageURL, game.name)}
+            alt={game.name}
+            onError={(e) => {
+              e.target.src = getPlaceholderImage(game.name)
+            }}
+          />
+        </div>
+
+        <div className="detail-info">
+          <h1>{game.name}</h1>
+          
+          <div className="rating-badge">
+            ⭐ {game.rating}/100
+          </div>
+
+          <section className="detail-section">
+            <h2>Description</h2>
+            <p>{game.description}</p>
+          </section>
+
+          <section className="detail-section">
+            <h3>Release Date</h3>
+            <p>{new Date(game.releaseDate).toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</p>
+          </section>
+
+          <div className="detail-grid">
+            <section className="detail-section">
+              <h3>Developer</h3>
+              <p>{game.developer}</p>
+            </section>
+
+            <section className="detail-section">
+              <h3>Publisher</h3>
+              <p>{game.publisher}</p>
+            </section>
+          </div>
+
+          {hasCategory && (
+            <section className="detail-section">
+              <h3>Category</h3>
+              <p className="category-tag">{game.category.name}</p>
+            </section>
+          )}
+
+          {hasPlatforms && (
+            <section className="detail-section">
+              <h3>Available on Platforms</h3>
+              <div className="platforms-list">
+                {game.gamePlatforms.map((gp, index) => {
+                  const platformName = gp.platform?.name || gp.platformName || `Platform ${gp.platformId}`
+                  console.log(`Platform ${index}:`, { gp, platformName })
+                  return (
+                    <span key={gp.id || index} className="platform-tag">
+                      🖥️ {platformName}
+                    </span>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          {!hasCategory && !hasPlatforms && (
+            <div style={{ color: '#999', marginTop: '2rem', fontSize: '0.9rem' }}>
+              <p>No category or platforms data available</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

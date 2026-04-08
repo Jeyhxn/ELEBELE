@@ -1,0 +1,214 @@
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class GameController : ControllerBase
+    {
+        private readonly IRepository _repository;
+        private readonly AppDbContext _context;
+
+        public GameController(IRepository repository, AppDbContext context)
+        {
+            _repository = repository;
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> Get(int page = 1, int take = 3)
+        {
+            int skipValue = (page - 1) * take;
+            var games = await _repository.GameGetAll(orderExpression: c => c.Name, isDescending: false, skip: skipValue, take: take).ToListAsync();
+
+            return Ok(games);
+        }
+
+        [HttpGet]
+        [Route("{id}")]
+        public async Task<IActionResult> Get(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            // Get game with related Category and GamePlatforms
+            Game game = await _repository.GameGetAll(
+                expression: g => g.Id == id,
+                includes: new string[] { "Category", "GamePlatforms.Platform", "GameImages", "GameTags.Tag" }
+            ).FirstOrDefaultAsync();
+
+            if (game is null) return NotFound();
+
+            return Ok(game);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromForm] CreateGameDto createGameDto)
+        {
+            var category = await _repository.CategoryGetAll(expression: c => c.Name == createGameDto.CategoryName)
+                .FirstOrDefaultAsync();
+
+            if (category is null)
+                return BadRequest($"Category '{createGameDto.CategoryName}' not found");
+
+            Game game = new Game
+            {
+                Name = createGameDto.Name,
+                Description = createGameDto.Description,
+                ReleaseDate = createGameDto.ReleaseDate,
+                Developer = createGameDto.Developer,
+                Publisher = createGameDto.Publisher,
+                Rating = createGameDto.Rating,
+                ImageURL = createGameDto.ImageURL,
+                AboutThisGame = createGameDto.AboutThisGame,
+                CategoryId = category.Id,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _repository.AddAsync(game);
+            await _repository.SaveChangeAsync();
+
+            if (createGameDto.PlatformIds.Any())
+            {
+                foreach (var platformId in createGameDto.PlatformIds)
+                {
+                    var gamePlatform = new GamePlatform
+                    {
+                        GameId = game.Id,
+                        PlatformId = platformId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _repository.AddAsync(gamePlatform);
+                }
+                await _repository.SaveChangeAsync();
+            }
+
+            if (createGameDto.AdditionalImageURLs.Any())
+            {
+                foreach (var imageUrl in createGameDto.AdditionalImageURLs)
+                {
+                    if (!string.IsNullOrWhiteSpace(imageUrl))
+                    {
+                        var gameImage = new GameImage
+                        {
+                            GameId = game.Id,
+                            ImageURL = imageUrl,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.GameImages.Add(gameImage);
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            if (createGameDto.TagIds.Any())
+            {
+                foreach (var tagId in createGameDto.TagIds)
+                {
+                    var gameTag = new GameTag
+                    {
+                        GameId = game.Id,
+                        TagId = tagId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.GameTags.Add(gameTag);
+                }
+                await _context.SaveChangesAsync();
+            }
+
+            return StatusCode(StatusCodes.Status201Created, game);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+            if (game is null) return NotFound();
+
+            _repository.Delete(game);
+
+            await _repository.SaveChangeAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateGameDto updateGameDto)
+        {
+            if (id < 1) return BadRequest();
+
+            Game game = await _repository.GameGetByIdAsync(id);
+
+            if (game is null) return NotFound();
+
+            var category = await _repository.CategoryGetAll(expression: c => c.Name == updateGameDto.CategoryName)
+                .FirstOrDefaultAsync();
+
+            if (category is null)
+                return BadRequest($"Category '{updateGameDto.CategoryName}' not found");
+
+            game.Name = updateGameDto.Name;
+            game.Description = updateGameDto.Description;
+            game.ReleaseDate = updateGameDto.ReleaseDate;
+            game.Developer = updateGameDto.Developer;
+            game.Publisher = updateGameDto.Publisher;
+            game.Rating = updateGameDto.Rating;
+            game.ImageURL = updateGameDto.ImageURL;
+            game.AboutThisGame = updateGameDto.AboutThisGame;
+            game.CategoryId = category.Id;
+
+            _repository.Update(game);
+            await _repository.SaveChangeAsync();
+
+            // Replace platforms
+            var existingPlatforms = await _context.GamePlatforms.Where(gp => gp.GameId == id).ToListAsync();
+            _context.GamePlatforms.RemoveRange(existingPlatforms);
+
+            if (updateGameDto.PlatformIds.Any())
+            {
+                foreach (var platformId in updateGameDto.PlatformIds)
+                {
+                    _context.GamePlatforms.Add(new GamePlatform
+                    {
+                        GameId = game.Id,
+                        PlatformId = platformId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            // Replace tags
+            var existingTags = await _context.GameTags.Where(gt => gt.GameId == id).ToListAsync();
+            _context.GameTags.RemoveRange(existingTags);
+
+            if (updateGameDto.TagIds.Any())
+            {
+                foreach (var tagId in updateGameDto.TagIds)
+                {
+                    _context.GameTags.Add(new GameTag
+                    {
+                        GameId = game.Id,
+                        TagId = tagId,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+            await _context.SaveChangesAsync();
+
+            // Return the updated game with all related data
+            var updatedGame = await _repository.GameGetAll(
+                expression: g => g.Id == id,
+                includes: new string[] { "Category", "GamePlatforms.Platform", "GameImages", "GameTags.Tag" }
+            ).FirstOrDefaultAsync();
+
+            return Ok(updatedGame);
+        }
+    }
+}

@@ -1,0 +1,120 @@
+﻿import { useState, useEffect } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getGameById } from '../api'
+
+export default function GameDetail() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const [game, setGame] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetchGame()
+  }, [id])
+
+  const fetchGame = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await getGameById(parseInt(id))
+      setGame(response.data)
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load game: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholderImage(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholderImage = (gameName) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const hash = gameName.charCodeAt(0)
+    const color = colors[hash % colors.length]
+    return `https://via.placeholder.com/500x600/` + color + `/FFFFFF?text=` + encodeURIComponent(gameName)
+  }
+
+  if (loading) return <div className="loading">Loading game details...</div>
+  if (error) return <div className="error">{error}</div>
+  if (!game) return <div className="error">Game not found</div>
+
+  return (
+    <div className="game-detail">
+      <button className="back-button" onClick={() => navigate('/')}>
+        ← Back to Games
+      </button>
+
+      <div className="detail-container">
+        <div className="detail-image">
+          <img 
+            src={getImageUrl(game.imageURL, game.name)}
+            alt={game.name}
+            onError={(e) => {
+              e.target.src = getPlaceholderImage(game.name)
+            }}
+          />
+        </div>
+
+        <div className="detail-info">
+          <h1>{game.name}</h1>
+          
+          <div className="rating-badge">
+            ⭐ {game.rating}/10
+          </div>
+
+          <section className="detail-section">
+            <h2>Description</h2>
+            <p>{game.description}</p>
+          </section>
+
+          <section className="detail-section">
+            <h3>Release Date</h3>
+            <p>{new Date(game.releaseDate).toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</p>
+          </section>
+
+          <div className="detail-grid">
+            <section className="detail-section">
+              <h3>Developer</h3>
+              <p>{game.developer}</p>
+            </section>
+
+            <section className="detail-section">
+              <h3>Publisher</h3>
+              <p>{game.publisher}</p>
+            </section>
+          </div>
+
+          {game.category && (
+            <section className="detail-section">
+              <h3>Category</h3>
+              <p className="category-tag">{game.category.name}</p>
+            </section>
+          )}
+
+          {game.gamePlatforms && game.gamePlatforms.length > 0 && (
+            <section className="detail-section">
+              <h3>Available on</h3>
+              <div className="platforms-list">
+                {game.gamePlatforms.map(gp => (
+                  <span key={gp.id} className="platform-tag">
+                    {gp.platform?.name || 'Platform'}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

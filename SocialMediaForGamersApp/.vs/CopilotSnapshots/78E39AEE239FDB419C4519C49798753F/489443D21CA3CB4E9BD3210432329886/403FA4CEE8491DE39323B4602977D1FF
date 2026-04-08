@@ -1,0 +1,39 @@
+﻿import { useState, useEffect } from 'react'
+import { testConnection } from '../api'
+
+export default function ConnectionTest() {
+  const [status, setStatus] = useState('Testing...')
+  const [isConnected, setIsConnected] = useState(false)
+
+  useEffect(() => {
+    const test = async () => {
+      const result = await testConnection()
+      setStatus(result.message)
+      setIsConnected(result.success)
+    }
+    test()
+  }, [])
+
+  return (
+    <div style={{
+      padding: '1rem',
+      margin: '1rem 0',
+      backgroundColor: isConnected ? '#efe' : '#fee',
+      border: `1px solid ${isConnected ? '#cfc' : '#fcc'}`,
+      borderRadius: '4px',
+      color: isConnected ? '#3c3' : '#c33'
+    }}>
+      <strong>Backend Connection:</strong> {status}
+      {!isConnected && (
+        <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+          <p>Make sure:</p>
+          <ul>
+            <li>Your .NET backend is running (F5)</li>
+            <li>Backend is on http://localhost:5000</li>
+            <li>No firewall is blocking port 5000</li>
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}

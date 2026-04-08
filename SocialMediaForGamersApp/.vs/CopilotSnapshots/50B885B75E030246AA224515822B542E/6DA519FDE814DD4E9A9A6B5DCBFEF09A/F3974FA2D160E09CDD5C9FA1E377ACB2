@@ -1,0 +1,74 @@
+﻿using System.Net;
+using System.Net.Mail;
+
+namespace SocialMediaForGamersApp.Services
+{
+    public interface IEmailService
+    {
+        Task SendVerificationEmailAsync(string toEmail, string username, string token);
+    }
+
+    public class EmailService : IEmailService
+    {
+        private readonly IConfiguration _config;
+
+        public EmailService(IConfiguration config)
+        {
+            _config = config;
+        }
+
+        public async Task SendVerificationEmailAsync(string toEmail, string username, string token)
+        {
+            var smtpHost = _config["Email:SmtpHost"];
+            var smtpPort = int.Parse(_config["Email:SmtpPort"] ?? "587");
+            var smtpUser = _config["Email:SmtpUser"];
+            var smtpPass = _config["Email:SmtpPass"];
+            var fromEmail = _config["Email:FromEmail"];
+            var fromName = _config["Email:FromName"] ?? "Social Media for Gamers";
+            var frontendUrl = _config["Email:FrontendUrl"] ?? "http://localhost:5173";
+
+            if (string.IsNullOrWhiteSpace(smtpHost) || string.IsNullOrWhiteSpace(smtpUser) ||
+                string.IsNullOrWhiteSpace(smtpPass) || string.IsNullOrWhiteSpace(fromEmail) ||
+                smtpUser.Contains("your-email") || smtpPass.Contains("your-app-password"))
+            {
+                throw new InvalidOperationException(
+                    "SMTP is not configured. Update the Email section in appsettings.json with real SMTP credentials.");
+            }
+
+            var verifyLink = $"{frontendUrl}/verify-email?token={Uri.EscapeDataString(token)}";
+
+            var subject = "Verify your email address";
+            var body = $@"
+                <div style='font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:24px;'>
+                    <h2>Welcome, {username}!</h2>
+                    <p>Thanks for signing up. Please verify your email address by clicking the button below:</p>
+                    <a href='{verifyLink}' 
+                       style='display:inline-block;padding:12px 28px;background:#6c5ce7;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;margin:16px 0;'>
+                       Verify Email
+                    </a>
+                    <p style='color:#888;font-size:13px;'>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style='color:#888;font-size:13px;word-break:break-all;'>{verifyLink}</p>
+                    <p style='color:#888;font-size:13px;'>This link expires in 24 hours.</p>
+                </div>";
+
+            using var client = new SmtpClient(smtpHost, smtpPort)
+            {
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(smtpUser, smtpPass),
+                EnableSsl = true
+            };
+
+            var message = new MailMessage
+            {
+                From = new MailAddress(fromEmail!, fromName),
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = true
+            };
+            message.To.Add(toEmail);
+
+            await client.SendMailAsync(message);
+        }
+    }
+}

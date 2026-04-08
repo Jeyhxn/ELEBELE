@@ -1,0 +1,146 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.Models;
+using System.IO;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class DebugController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public DebugController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet("images")]
+        public IActionResult GetAvailableImages()
+        {
+            var imagesPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images");
+
+            if (!Directory.Exists(imagesPath))
+            {
+                return Ok(new { message = "wwwroot/images folder does not exist", path = imagesPath });
+            }
+
+            var files = Directory.GetFiles(imagesPath)
+                .Select(f => new { 
+                    filename = Path.GetFileName(f),
+                    fullPath = f,
+                    url = $"/images/{Path.GetFileName(f)}"
+                })
+                .ToList();
+
+            return Ok(new { 
+                imagesPath = imagesPath,
+                count = files.Count,
+                files = files
+            });
+        }
+
+        [HttpGet("setup-test-data")]
+        public async Task<IActionResult> SetupTestData()
+        {
+            try
+            {
+                // Ensure categories exist
+                var horrorCategory = _context.Categories.FirstOrDefault(c => c.Name == "Horror");
+                if (horrorCategory == null)
+                {
+                    horrorCategory = new Category 
+                    { 
+                        Name = "Horror",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Categories.Add(horrorCategory);
+                }
+
+                var actionCategory = _context.Categories.FirstOrDefault(c => c.Name == "Action");
+                if (actionCategory == null)
+                {
+                    actionCategory = new Category 
+                    { 
+                        Name = "Action",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Categories.Add(actionCategory);
+                }
+
+                await _context.SaveChangesAsync();
+
+                // Ensure platforms exist
+                var pc = _context.Platforms.FirstOrDefault(p => p.Name == "PC");
+                if (pc == null)
+                {
+                    pc = new Platform 
+                    { 
+                        Name = "PC",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Platforms.Add(pc);
+                }
+
+                var ps5 = _context.Platforms.FirstOrDefault(p => p.Name == "PlayStation 5");
+                if (ps5 == null)
+                {
+                    ps5 = new Platform 
+                    { 
+                        Name = "PlayStation 5",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Platforms.Add(ps5);
+                }
+
+                await _context.SaveChangesAsync();
+
+                // Link games to categories
+                var games = _context.Games.Where(g => g.CategoryId == 0 || g.CategoryId == null).ToList();
+                foreach (var game in games)
+                {
+                    game.CategoryId = horrorCategory.Id;
+                }
+
+                // Link games to platforms
+                var gameIds = _context.Games.Select(g => g.Id).ToList();
+                var platformIds = _context.Platforms.Select(p => p.Id).ToList();
+
+                foreach (var gameId in gameIds)
+                {
+                    var existingLinks = _context.GamePlatforms.Where(gp => gp.GameId == gameId).ToList();
+                    if (existingLinks.Count == 0)
+                    {
+                        foreach (var platformId in platformIds)
+                        {
+                            var gamePlatform = new GamePlatform
+                            {
+                                GameId = gameId,
+                                PlatformId = platformId,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            _context.GamePlatforms.Add(gamePlatform);
+                        }
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new 
+                { 
+                    message = "✅ Test data setup complete!",
+                    gamesLinked = games.Count,
+                    categories = _context.Categories.Count(),
+                    platforms = _context.Platforms.Count(),
+                    gamePlatforms = _context.GamePlatforms.Count()
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+    }
+}
+

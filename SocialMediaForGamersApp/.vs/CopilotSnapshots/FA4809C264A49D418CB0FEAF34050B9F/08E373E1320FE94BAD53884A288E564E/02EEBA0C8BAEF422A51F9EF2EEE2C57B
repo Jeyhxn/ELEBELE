@@ -1,0 +1,305 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Post;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Utilities.Enums;
+using SocialMediaForGamersApp.Utilities.Extensions;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class PostController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+        private readonly IWebHostEnvironment _env;
+
+        private static readonly string[] AllowedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+        private static readonly string[] AllowedVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
+
+        public PostController(AppDbContext context, IWebHostEnvironment env)
+        {
+            _context = context;
+            _env = env;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetFeed(int page = 1, int take = 20, string sort = "new", int? communityId = null)
+        {
+            int skip = (page - 1) * take;
+
+            var query = _context.Posts
+                .Where(p => !p.IsDeleted)
+                .Include(p => p.User)
+                .Include(p => p.Community)
+                .Include(p => p.Votes)
+                .Include(p => p.Comments.Where(c => !c.IsDeleted))
+                    .ThenInclude(c => c.User)
+                .AsQueryable();
+
+            if (communityId.HasValue)
+            {
+                query = query.Where(p => p.CommunityId == communityId.Value);
+            }
+
+            query = sort switch
+            {
+                "top" => query.OrderByDescending(p =>
+                    p.Votes.Count(v => v.IsUpvote) - p.Votes.Count(v => !v.IsUpvote)),
+                "hot" => query.OrderByDescending(p =>
+                    (p.Votes.Count(v => v.IsUpvote) - p.Votes.Count(v => !v.IsUpvote))
+                    + (EF.Functions.DateDiffHour(p.CreatedAt, DateTime.UtcNow) < 24 ? 5 : 0)),
+                _ => query.OrderByDescending(p => p.CreatedAt)
+            };
+
+            var posts = await query.Skip(skip).Take(take).ToListAsync();
+
+            var result = posts.Select(p => new
+            {
+                p.Id,
+                p.Title,
+                p.Content,
+                p.ImageURL,
+                p.MediaURL,
+                p.MediaType,
+                p.CreatedAt,
+                Author = new { p.User.Id, p.User.Username },
+                Community = new { p.Community.Id, p.Community.Name },
+                Upvotes = p.Votes.Count(v => v.IsUpvote),
+                Downvotes = p.Votes.Count(v => !v.IsUpvote),
+                Score = p.Votes.Count(v => v.IsUpvote) - p.Votes.Count(v => !v.IsUpvote),
+                CommentCount = p.Comments.Count,
+                Comments = p.Comments
+                    .OrderBy(c => c.CreatedAt)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.Content,
+                        c.CreatedAt,
+                        Author = new { c.User.Id, c.User.Username }
+                    })
+            });
+
+            return Ok(result);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var post = await _context.Posts
+                .Where(p => p.Id == id && !p.IsDeleted)
+                .Include(p => p.User)
+                .Include(p => p.Community)
+                .Include(p => p.Votes)
+                .Include(p => p.Comments.Where(c => !c.IsDeleted))
+                    .ThenInclude(c => c.User)
+                .FirstOrDefaultAsync();
+
+            if (post == null) return NotFound();
+
+            var allComments = post.Comments.OrderBy(c => c.CreatedAt).ToList();
+
+            return Ok(new
+            {
+                post.Id,
+                post.Title,
+                post.Content,
+                post.ImageURL,
+                post.CreatedAt,
+                Author = new { post.User.Id, post.User.Username },
+                Community = new { post.Community.Id, post.Community.Name },
+                Upvotes = post.Votes.Count(v => v.IsUpvote),
+                Downvotes = post.Votes.Count(v => !v.IsUpvote),
+                Score = post.Votes.Count(v => v.IsUpvote) - post.Votes.Count(v => !v.IsUpvote),
+                Comments = allComments
+                    .Where(c => c.ParentCommentId == null)
+                    .Select(c => MapComment(c, allComments))
+            });
+        }
+
+        private object MapComment(PostComment c, List<PostComment> allComments)
+        {
+            return new
+            {
+                c.Id,
+                c.Content,
+                c.CreatedAt,
+                c.ParentCommentId,
+                Author = new { c.User.Id, c.User.Username },
+                Replies = allComments
+                    .Where(r => r.ParentCommentId == c.Id)
+                    .OrderBy(r => r.CreatedAt)
+                    .Select(r => MapComment(r, allComments))
+            };
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreatePostDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Title) || string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Title and content are required" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return BadRequest(new { message = "User not found" });
+
+            var community = await _context.Communities.FindAsync(dto.CommunityId);
+            if (community == null || community.IsDeleted)
+                return BadRequest(new { message = "Community not found" });
+
+            var post = new Post
+            {
+                Title = dto.Title,
+                Content = dto.Content,
+                CommunityId = dto.CommunityId,
+                UserId = dto.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Posts.Add(post);
+            await _context.SaveChangesAsync();
+
+            return StatusCode(StatusCodes.Status201Created, new { post.Id, post.Title });
+        }
+
+        [HttpPost("vote")]
+        public async Task<IActionResult> Vote([FromBody] VoteDto dto)
+        {
+            var post = await _context.Posts.FindAsync(dto.PostId);
+            if (post == null || post.IsDeleted) return NotFound();
+
+            var existing = await _context.PostVotes
+                .FirstOrDefaultAsync(v => v.PostId == dto.PostId && v.UserId == dto.UserId);
+
+            if (existing != null)
+            {
+                if (existing.IsUpvote == dto.IsUpvote)
+                {
+                    _context.PostVotes.Remove(existing);
+                }
+                else
+                {
+                    existing.IsUpvote = dto.IsUpvote;
+                }
+            }
+            else
+            {
+                _context.PostVotes.Add(new PostVote
+                {
+                    PostId = dto.PostId,
+                    UserId = dto.UserId,
+                    IsUpvote = dto.IsUpvote,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            var upvotes = await _context.PostVotes.CountAsync(v => v.PostId == dto.PostId && v.IsUpvote);
+            var downvotes = await _context.PostVotes.CountAsync(v => v.PostId == dto.PostId && !v.IsUpvote);
+
+            return Ok(new { upvotes, downvotes, score = upvotes - downvotes });
+        }
+
+        [HttpPost("comment")]
+        public async Task<IActionResult> AddComment([FromBody] CreatePostCommentDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Content is required" });
+
+            var post = await _context.Posts.FindAsync(dto.PostId);
+            if (post == null || post.IsDeleted) return NotFound();
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return BadRequest(new { message = "User not found" });
+
+            if (dto.ParentCommentId.HasValue)
+            {
+                var parent = await _context.PostComments.FindAsync(dto.ParentCommentId.Value);
+                if (parent == null || parent.IsDeleted || parent.PostId != dto.PostId)
+                    return BadRequest(new { message = "Parent comment not found" });
+            }
+
+            var comment = new PostComment
+            {
+                Content = dto.Content,
+                PostId = dto.PostId,
+                UserId = dto.UserId,
+                ParentCommentId = dto.ParentCommentId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.PostComments.Add(comment);
+            await _context.SaveChangesAsync();
+
+            return StatusCode(StatusCodes.Status201Created, new
+            {
+                comment.Id,
+                comment.Content,
+                comment.CreatedAt,
+                comment.ParentCommentId,
+                Author = new { user.Id, user.Username },
+                Replies = Array.Empty<object>()
+            });
+        }
+
+        [HttpPut("comment/{id}")]
+        public async Task<IActionResult> EditComment(int id, [FromBody] EditPostCommentDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Content is required" });
+
+            var comment = await _context.PostComments
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
+            if (comment == null) return NotFound();
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (comment.UserId != dto.UserId && (user == null || !user.IsAdmin))
+                return Forbid();
+
+            comment.Content = dto.Content;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                comment.Id,
+                comment.Content,
+                comment.CreatedAt,
+                Author = new { comment.User.Id, comment.User.Username }
+            });
+        }
+
+        [HttpDelete("comment/{id}")]
+        public async Task<IActionResult> DeleteComment(int id, [FromQuery] int userId)
+        {
+            var comment = await _context.PostComments.FindAsync(id);
+            if (comment == null || comment.IsDeleted) return NotFound();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (comment.UserId != userId && (user == null || !user.IsAdmin))
+                return Forbid();
+
+            comment.IsDeleted = true;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id, [FromQuery] int userId)
+        {
+            var post = await _context.Posts.FindAsync(id);
+            if (post == null || post.IsDeleted) return NotFound();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (post.UserId != userId && (user == null || !user.IsAdmin))
+                return Forbid();
+
+            post.IsDeleted = true;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+    }
+}

@@ -1,0 +1,82 @@
+﻿import { useState, useEffect } from 'react'
+import { getPlatforms, createPlatform } from '../api'
+
+export default function PlatformsList() {
+  const [platforms, setPlatforms] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [newName, setNewName] = useState('')
+  const [showForm, setShowForm] = useState(false)
+
+  useEffect(() => {
+    fetchPlatforms()
+  }, [])
+
+  const fetchPlatforms = async () => {
+    try {
+      setLoading(true)
+      const response = await getPlatforms(1, 10)
+      setPlatforms(response.data)
+      setError(null)
+    } catch (err) {
+      setError('Failed to load platforms: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!newName.trim()) return
+
+    try {
+      await createPlatform({ name: newName })
+      setNewName('')
+      setShowForm(false)
+      fetchPlatforms()
+    } catch (err) {
+      setError('Failed to create platform: ' + err.message)
+    }
+  }
+
+  if (loading) return <div className="loading">Loading platforms...</div>
+  if (error) return <div className="error">{error}</div>
+
+  return (
+    <div>
+      <button onClick={() => setShowForm(!showForm)}>
+        {showForm ? 'Cancel' : 'Add Platform'}
+      </button>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} style={{ marginTop: '1rem' }}>
+          <div className="form-group">
+            <label>Platform Name</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g., PC, PlayStation 5, Xbox Series X"
+              required
+            />
+          </div>
+          <button type="submit">Create Platform</button>
+        </form>
+      )}
+
+      <div style={{ marginTop: '1rem' }}>
+        {platforms.length === 0 ? (
+          <p>No platforms yet. Create one!</p>
+        ) : (
+          <div className="grid">
+            {platforms.map(plat => (
+              <div key={plat.id} className="card">
+                <h3>{plat.name}</h3>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,520 @@
+﻿import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import {
+  changePassword, changeUsername, deleteAccount, clearViewHistory,
+  getNotificationPreferences, updateNotificationPreferences,
+  getMutedCommunities, unmuteCommunity, muteCommunity, getCommunities
+} from '../api'
+
+export default function SettingsPage() {
+  const { user, login, logout } = useAuth()
+  const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState('account')
+
+  // Username
+  const [newUsername, setNewUsername] = useState('')
+  const [usernameMsg, setUsernameMsg] = useState(null)
+  const [savingUsername, setSavingUsername] = useState(false)
+
+  // Change password
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [pwMsg, setPwMsg] = useState(null)
+  const [savingPw, setSavingPw] = useState(false)
+
+  // Delete account
+  const [deletePw, setDeletePw] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleteMsg, setDeleteMsg] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+
+  // Clear history
+  const [historyMsg, setHistoryMsg] = useState(null)
+  const [clearingHistory, setClearingHistory] = useState(false)
+
+  // Notification preferences
+  const [notifPrefs, setNotifPrefs] = useState({
+    notifyNewPosts: true,
+    notifyCommentReplies: true,
+    notifyPostVotes: true
+  })
+  const [notifMsg, setNotifMsg] = useState(null)
+  const [savingNotif, setSavingNotif] = useState(false)
+
+  // Muted communities
+  const [mutedList, setMutedList] = useState([])
+  const [allCommunities, setAllCommunities] = useState([])
+  const [muteSearch, setMuteSearch] = useState('')
+  const [muteMsg, setMuteMsg] = useState(null)
+
+  useEffect(() => {
+    if (user) {
+      setNewUsername(user.username || '')
+      loadNotifPrefs()
+      loadMutedCommunities()
+    }
+  }, [user])
+
+  const loadNotifPrefs = async () => {
+    try {
+      const res = await getNotificationPreferences(user.id)
+      setNotifPrefs(res.data)
+    } catch {}
+  }
+
+  const loadMutedCommunities = async () => {
+    try {
+      const res = await getMutedCommunities(user.id)
+      setMutedList(res.data)
+    } catch {}
+  }
+
+  const loadAllCommunities = async (search) => {
+    try {
+      const res = await getCommunities(search || null)
+      setAllCommunities(res.data)
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (activeTab === 'muted') {
+      loadAllCommunities()
+    }
+  }, [activeTab])
+
+  // Username
+  const handleSaveUsername = async () => {
+    const trimmed = newUsername.trim()
+    if (!trimmed) {
+      setUsernameMsg({ type: 'error', text: 'Username is required' })
+      return
+    }
+    if (trimmed.length < 3 || trimmed.length > 20) {
+      setUsernameMsg({ type: 'error', text: 'Username must be between 3 and 20 characters' })
+      return
+    }
+    try {
+      setSavingUsername(true)
+      setUsernameMsg(null)
+      const res = await changeUsername({ userId: user.id, newUsername: trimmed })
+      const updatedUser = { ...user, username: res.data.username }
+      login(updatedUser, localStorage.getItem('token'))
+      setUsernameMsg({ type: 'success', text: 'Username updated!' })
+    } catch (err) {
+      setUsernameMsg({ type: 'error', text: err.response?.data?.message || 'Failed to update username' })
+    } finally {
+      setSavingUsername(false)
+    }
+  }
+
+  // Change password
+  const handleChangePassword = async () => {
+    if (newPw !== confirmPw) {
+      setPwMsg({ type: 'error', text: 'New passwords do not match' })
+      return
+    }
+    if (newPw.length < 6) {
+      setPwMsg({ type: 'error', text: 'Password must be at least 6 characters' })
+      return
+    }
+    try {
+      setSavingPw(true)
+      setPwMsg(null)
+      await changePassword({ userId: user.id, currentPassword: currentPw, newPassword: newPw })
+      setPwMsg({ type: 'success', text: 'Password changed successfully!' })
+      setCurrentPw('')
+      setNewPw('')
+      setConfirmPw('')
+    } catch (err) {
+      setPwMsg({ type: 'error', text: err.response?.data?.message || 'Failed to change password' })
+    } finally {
+      setSavingPw(false)
+    }
+  }
+
+  // Delete account
+  const handleDeleteAccount = async () => {
+    if (!deletePw) {
+      setDeleteMsg({ type: 'error', text: 'Enter your password to confirm' })
+      return
+    }
+    try {
+      setDeleting(true)
+      setDeleteMsg(null)
+      await deleteAccount({ userId: user.id, password: deletePw })
+      logout()
+      navigate('/')
+    } catch (err) {
+      setDeleteMsg({ type: 'error', text: err.response?.data?.message || 'Failed to delete account' })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Clear history
+  const handleClearHistory = async () => {
+    try {
+      setClearingHistory(true)
+      setHistoryMsg(null)
+      await clearViewHistory(user.id)
+      setHistoryMsg({ type: 'success', text: 'View history cleared!' })
+    } catch (err) {
+      setHistoryMsg({ type: 'error', text: 'Failed to clear history' })
+    } finally {
+      setClearingHistory(false)
+    }
+  }
+
+  // Notification preferences
+  const handleToggleNotif = (key) => {
+    setNotifPrefs(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const handleSaveNotifPrefs = async () => {
+    try {
+      setSavingNotif(true)
+      setNotifMsg(null)
+      await updateNotificationPreferences({
+        userId: user.id,
+        notifyNewPosts: notifPrefs.notifyNewPosts,
+        notifyCommentReplies: notifPrefs.notifyCommentReplies,
+        notifyPostVotes: notifPrefs.notifyPostVotes
+      })
+      setNotifMsg({ type: 'success', text: 'Notification settings saved!' })
+    } catch (err) {
+      setNotifMsg({ type: 'error', text: 'Failed to save preferences' })
+    } finally {
+      setSavingNotif(false)
+    }
+  }
+
+  // Mute / Unmute
+  const handleMute = async (communityId) => {
+    try {
+      await muteCommunity(user.id, communityId)
+      setMuteMsg({ type: 'success', text: 'Community muted' })
+      loadMutedCommunities()
+    } catch {
+      setMuteMsg({ type: 'error', text: 'Failed to mute community' })
+    }
+  }
+
+  const handleUnmute = async (communityId) => {
+    try {
+      await unmuteCommunity(user.id, communityId)
+      setMuteMsg({ type: 'success', text: 'Community unmuted' })
+      loadMutedCommunities()
+    } catch {
+      setMuteMsg({ type: 'error', text: 'Failed to unmute community' })
+    }
+  }
+
+  useEffect(() => {
+    if (muteSearch.trim().length >= 1) {
+      loadAllCommunities(muteSearch.trim())
+    } else if (activeTab === 'muted') {
+      loadAllCommunities()
+    }
+  }, [muteSearch])
+
+  if (!user) {
+    return (
+      <div className="settings-page">
+        <div className="settings-empty">Sign in to access settings.</div>
+      </div>
+    )
+  }
+
+  const TABS = [
+    { key: 'account', label: '👤 Account', icon: '👤' },
+    { key: 'password', label: '🔒 Password', icon: '🔒' },
+    { key: 'notifications', label: '🔔 Notifications', icon: '🔔' },
+    { key: 'muted', label: '🔇 Muted', icon: '🔇' },
+    { key: 'history', label: '🕐 History', icon: '🕐' },
+    { key: 'danger', label: '⚠️ Danger Zone', icon: '⚠️' },
+  ]
+
+  const mutedIds = new Set(mutedList.map(m => m.communityId))
+  const availableToMute = allCommunities.filter(c => !mutedIds.has(c.id))
+
+  return (
+    <div className="settings-page">
+      <h1>⚙️ Settings</h1>
+
+      <div className="settings-layout">
+        {/* Sidebar tabs */}
+        <div className="settings-tabs">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              className={`settings-tab ${activeTab === t.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content area */}
+        <div className="settings-content">
+          {/* === Account Tab === */}
+          {activeTab === 'account' && (
+            <div className="settings-section">
+              <h3>Profile Information</h3>
+              <div className="settings-row">
+                <span className="settings-label">Email</span>
+                <span className="settings-value">{user.email}</span>
+              </div>
+              <div className="settings-row">
+                <span className="settings-label">Role</span>
+                <span className="settings-value">{user.isAdmin ? 'Admin' : 'Member'}</span>
+              </div>
+
+              <div className="settings-divider" />
+
+              <h3>Change Username</h3>
+              <div className="settings-field">
+                <label className="settings-field-label">Username</label>
+                <input
+                  className="settings-input"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="Enter new username"
+                />
+              </div>
+              {usernameMsg && (
+                <div className={`settings-msg ${usernameMsg.type}`}>{usernameMsg.text}</div>
+              )}
+              <button className="settings-btn settings-btn-primary" onClick={handleSaveUsername} disabled={savingUsername}>
+                {savingUsername ? 'Saving...' : 'Save Username'}
+              </button>
+            </div>
+          )}
+
+          {/* === Password Tab === */}
+          {activeTab === 'password' && (
+            <div className="settings-section">
+              <h3>Change Password</h3>
+              <div className="settings-field">
+                <label className="settings-field-label">Current Password</label>
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={currentPw}
+                  onChange={(e) => setCurrentPw(e.target.value)}
+                  placeholder="Enter current password"
+                />
+              </div>
+              <div className="settings-field">
+                <label className="settings-field-label">New Password</label>
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={newPw}
+                  onChange={(e) => setNewPw(e.target.value)}
+                  placeholder="Enter new password (min 6 characters)"
+                />
+              </div>
+              <div className="settings-field">
+                <label className="settings-field-label">Confirm New Password</label>
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={confirmPw}
+                  onChange={(e) => setConfirmPw(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </div>
+              {pwMsg && (
+                <div className={`settings-msg ${pwMsg.type}`}>{pwMsg.text}</div>
+              )}
+              <button
+                className="settings-btn settings-btn-primary"
+                onClick={handleChangePassword}
+                disabled={savingPw || !currentPw || !newPw || !confirmPw}
+              >
+                {savingPw ? 'Changing...' : 'Change Password'}
+              </button>
+            </div>
+          )}
+
+          {/* === Notifications Tab === */}
+          {activeTab === 'notifications' && (
+            <div className="settings-section">
+              <h3>Notification Preferences</h3>
+              <p className="settings-desc">Choose which notifications you want to receive.</p>
+
+              <div className="settings-toggle-row">
+                <div className="settings-toggle-info">
+                  <span className="settings-toggle-label">New posts in communities</span>
+                  <span className="settings-toggle-desc">Get notified when someone posts in your communities</span>
+                </div>
+                <button
+                  className={`settings-toggle ${notifPrefs.notifyNewPosts ? 'on' : ''}`}
+                  onClick={() => handleToggleNotif('notifyNewPosts')}
+                >
+                  <span className="settings-toggle-knob" />
+                </button>
+              </div>
+
+              <div className="settings-toggle-row">
+                <div className="settings-toggle-info">
+                  <span className="settings-toggle-label">Comment replies</span>
+                  <span className="settings-toggle-desc">Get notified when someone replies to your comments</span>
+                </div>
+                <button
+                  className={`settings-toggle ${notifPrefs.notifyCommentReplies ? 'on' : ''}`}
+                  onClick={() => handleToggleNotif('notifyCommentReplies')}
+                >
+                  <span className="settings-toggle-knob" />
+                </button>
+              </div>
+
+              <div className="settings-toggle-row">
+                <div className="settings-toggle-info">
+                  <span className="settings-toggle-label">Post votes</span>
+                  <span className="settings-toggle-desc">Get notified when someone votes on your posts</span>
+                </div>
+                <button
+                  className={`settings-toggle ${notifPrefs.notifyPostVotes ? 'on' : ''}`}
+                  onClick={() => handleToggleNotif('notifyPostVotes')}
+                >
+                  <span className="settings-toggle-knob" />
+                </button>
+              </div>
+
+              {notifMsg && (
+                <div className={`settings-msg ${notifMsg.type}`}>{notifMsg.text}</div>
+              )}
+              <button className="settings-btn settings-btn-primary" onClick={handleSaveNotifPrefs} disabled={savingNotif}>
+                {savingNotif ? 'Saving...' : 'Save Preferences'}
+              </button>
+            </div>
+          )}
+
+          {/* === Muted Communities Tab === */}
+          {activeTab === 'muted' && (
+            <div className="settings-section">
+              <h3>Muted Communities</h3>
+              <p className="settings-desc">Muted communities won't appear in your feed or send you notifications.</p>
+
+              {mutedList.length > 0 && (
+                <div className="settings-muted-list">
+                  {mutedList.map(m => (
+                    <div key={m.id} className="settings-muted-item">
+                      <span className="settings-muted-name">🎮 c/{m.communityName}</span>
+                      <button className="settings-btn settings-btn-small" onClick={() => handleUnmute(m.communityId)}>
+                        Unmute
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {mutedList.length === 0 && (
+                <p className="settings-muted-empty">No muted communities.</p>
+              )}
+
+              <div className="settings-divider" />
+
+              <h3>Mute a Community</h3>
+              <input
+                className="settings-input"
+                placeholder="Search communities..."
+                value={muteSearch}
+                onChange={(e) => setMuteSearch(e.target.value)}
+              />
+              {availableToMute.length > 0 && (
+                <div className="settings-muted-list settings-mute-search-results">
+                  {availableToMute.slice(0, 10).map(c => (
+                    <div key={c.id} className="settings-muted-item">
+                      <span className="settings-muted-name"> c/{c.name}</span>
+                      <button className="settings-btn settings-btn-small settings-btn-danger-outline" onClick={() => handleMute(c.id)}>
+                        Mute
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {muteMsg && (
+                <div className={`settings-msg ${muteMsg.type}`}>{muteMsg.text}</div>
+              )}
+            </div>
+          )}
+
+          {/* === History Tab === */}
+          {activeTab === 'history' && (
+            <div className="settings-section">
+              <h3>View History</h3>
+              <p className="settings-desc">Clear the list of posts you've previously viewed.</p>
+              {historyMsg && (
+                <div className={`settings-msg ${historyMsg.type}`}>{historyMsg.text}</div>
+              )}
+              <button
+                className="settings-btn settings-btn-danger"
+                onClick={() => {
+                  if (confirm('Clear all view history? This cannot be undone.')) handleClearHistory()
+                }}
+                disabled={clearingHistory}
+              >
+                {clearingHistory ? 'Clearing...' : '🗑️ Clear All View History'}
+              </button>
+            </div>
+          )}
+
+          {/* === Danger Zone Tab === */}
+          {activeTab === 'danger' && (
+            <div className="settings-section settings-section-danger">
+              <h3>⚠️ Delete Account</h3>
+              <p className="settings-desc settings-danger-text">
+                This action is <strong>permanent</strong> and cannot be undone. All your posts, comments, votes, and community memberships will be removed.
+              </p>
+
+              {!deleteConfirm ? (
+                <button
+                  className="settings-btn settings-btn-danger"
+                  onClick={() => setDeleteConfirm(true)}
+                >
+                  I want to delete my account
+                </button>
+              ) : (
+                <div className="settings-delete-confirm">
+                  <p className="settings-desc">Enter your password to confirm account deletion:</p>
+                  <div className="settings-field">
+                    <input
+                      className="settings-input"
+                      type="password"
+                      value={deletePw}
+                      onChange={(e) => setDeletePw(e.target.value)}
+                      placeholder="Enter your password"
+                    />
+                  </div>
+                  {deleteMsg && (
+                    <div className={`settings-msg ${deleteMsg.type}`}>{deleteMsg.text}</div>
+                  )}
+                  <div className="settings-delete-actions">
+                    <button
+                      className="settings-btn settings-btn-danger"
+                      onClick={handleDeleteAccount}
+                      disabled={deleting || !deletePw}
+                    >
+                      {deleting ? 'Deleting...' : 'Permanently Delete Account'}
+                    </button>
+                    <button
+                      className="settings-btn"
+                      onClick={() => { setDeleteConfirm(false); setDeletePw(''); setDeleteMsg(null) }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

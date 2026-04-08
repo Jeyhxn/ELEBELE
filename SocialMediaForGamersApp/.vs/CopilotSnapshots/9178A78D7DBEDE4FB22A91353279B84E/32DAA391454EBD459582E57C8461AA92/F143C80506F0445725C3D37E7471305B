@@ -1,0 +1,184 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.Models;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AdminController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public AdminController(AppDbContext context) {
+            _context = context;
+        }
+
+        private async Task<bool> IsAdminAsync(int adminId)
+        {
+            var user = await _context.Users.FindAsync(adminId);
+            return user != null && user.IsAdmin && !user.IsDeleted;
+        }
+
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetStats([FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            var stats = new
+            {
+                TotalGames = await _context.Games.CountAsync(g => !g.IsDeleted),
+                TotalUsers = await _context.Users.CountAsync(u => !u.IsDeleted),
+                TotalComments = await _context.Comments.CountAsync(c => !c.IsDeleted),
+                TotalCategories = await _context.Categories.CountAsync(c => !c.IsDeleted),
+                TotalPlatforms = await _context.Platforms.CountAsync(p => !p.IsDeleted),
+                TotalTags = await _context.Tags.CountAsync(t => !t.IsDeleted),
+                TotalCommunities = await _context.Communities.CountAsync(c => !c.IsDeleted),
+                PositiveComments = await _context.Comments.CountAsync(c => !c.IsDeleted && c.IsPositive),
+                NegativeComments = await _context.Comments.CountAsync(c => !c.IsDeleted && !c.IsPositive),
+            };
+
+            return Ok(stats);
+        }
+
+        [HttpGet("users")]
+        public async Task<IActionResult> GetUsers([FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            var users = await _context.Users
+                .Where(u => !u.IsDeleted)
+                .OrderBy(u => u.Username)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Username,
+                    u.Email,
+                    u.FirstName,
+                    u.LastName,
+                    u.IsAdmin,
+                    u.IsModerator,
+                    u.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
+
+        [HttpPut("users/{id}/toggle-admin")]
+        public async Task<IActionResult> ToggleAdmin(int id, [FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            if (id == adminId)
+                return BadRequest(new { message = "You cannot change your own admin status" });
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || user.IsDeleted)
+                return NotFound();
+
+            user.IsAdmin = !user.IsAdmin;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { user.Id, user.Username, user.IsAdmin });
+        }
+
+        [HttpPut("users/{id}/toggle-moderator")]
+        public async Task<IActionResult> ToggleModerator(int id, [FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            if (id == adminId)
+                return BadRequest(new { message = "You cannot change your own moderator status" });
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || user.IsDeleted)
+                return NotFound();
+
+            user.IsModerator = !user.IsModerator;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { user.Id, user.Username, user.IsModerator });
+        }
+
+        [HttpDelete("users/{id}")]
+        public async Task<IActionResult> DeleteUser(int id, [FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            if (id == adminId)
+                return BadRequest(new { message = "You cannot delete your own account" });
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || user.IsDeleted)
+                return NotFound();
+
+            user.IsDeleted = true;
+
+            // Soft-delete all user's posts
+            var posts = await _context.Posts.Where(p => p.UserId == id && !p.IsDeleted).ToListAsync();
+            foreach (var p in posts) p.IsDeleted = true;
+
+            // Soft-delete all user's post comments
+            var postComments = await _context.PostComments.Where(c => c.UserId == id && !c.IsDeleted).ToListAsync();
+            foreach (var c in postComments) c.IsDeleted = true;
+
+            // Remove all user's post votes
+            var postVotes = await _context.PostVotes.Where(v => v.UserId == id).ToListAsync();
+            _context.PostVotes.RemoveRange(postVotes);
+
+            // Soft-delete all user's game comments
+            var gameComments = await _context.Comments.Where(c => c.UserId == id && !c.IsDeleted).ToListAsync();
+            foreach (var c in gameComments) c.IsDeleted = true;
+
+            // Soft-delete all user's community memberships
+            var memberships = await _context.CommunityMembers.Where(m => m.UserId == id && !m.IsDeleted).ToListAsync();
+            foreach (var m in memberships) m.IsDeleted = true;
+
+            // Soft-delete all user's notifications
+            var notifications = await _context.Notifications.Where(n => n.UserId == id && !n.IsDeleted).ToListAsync();
+            foreach (var n in notifications) n.IsDeleted = true;
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpPost("sync-game-communities")]
+        public async Task<IActionResult> SyncGameCommunities([FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            var gamesWithoutCommunity = await _context.Games
+                .Where(g => !g.IsDeleted)
+                .Where(g => !_context.Communities.Any(c => c.GameId == g.Id && !c.IsDeleted))
+                .ToListAsync();
+
+            if (gamesWithoutCommunity.Count == 0)
+                return Ok(new { message = "All games already have communities", created = 0 });
+
+            foreach (var game in gamesWithoutCommunity)
+            {
+                _context.Communities.Add(new Community
+                {
+                    Name = game.Name,
+                    Description = $"Community for {game.Name}",
+                    GameId = game.Id,
+                    CreatedByUserId = adminId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = $"Created {gamesWithoutCommunity.Count} communities", created = gamesWithoutCommunity.Count });
+        }
+    }
+}

@@ -1,0 +1,36 @@
+namespace SocialMediaForGamersApp.DTOs.Settings
+{
+    public class ChangePasswordDto
+    {
+        public int UserId { get; set; }
+        public string CurrentPassword { get; set; }
+        public string NewPassword { get; set; }
+    }
+
+    public class ChangeProfileNameDto
+    {
+        public int UserId { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+    }
+
+    public class UpdateNotificationSettingsDto
+    {
+        public int UserId { get; set; }
+        public bool NotifyNewPosts { get; set; }
+        public bool NotifyCommentReplies { get; set; }
+        public bool NotifyPostVotes { get; set; }
+    }
+
+    public class DeleteAccountDto
+    {
+        public int UserId { get; set; }
+        public string Password { get; set; }
+    }
+
+    public class ChangeUsernameDto
+    {
+        public int UserId { get; set; }
+        public string NewUsername { get; set; }
+    }
+}

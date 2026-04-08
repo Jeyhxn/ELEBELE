@@ -1,0 +1,328 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Auth;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Services;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AuthController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
+        private const string JwtSecret = "YourSuperSecretKeyThatIsAtLeast32CharactersLongForHS256";
+
+        public AuthController(AppDbContext context, IEmailService emailService)
+        {
+            _context = context;
+            _emailService = emailService;
+        }
+
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterDto registerDto)
+        {
+            try
+            {
+                // Validate input
+                if (string.IsNullOrWhiteSpace(registerDto.Username) || 
+                    string.IsNullOrWhiteSpace(registerDto.Email) || 
+                    string.IsNullOrWhiteSpace(registerDto.Password))
+                {
+                    return BadRequest(new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = "Username, email, and password are required"
+                    });
+                }
+
+                // Check if user already exists
+                var existingUser = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Username == registerDto.Username || u.Email == registerDto.Email);
+
+                if (existingUser != null)
+                {
+                    return BadRequest(new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = "Username or email already exists"
+                    });
+                }
+
+                // Hash password
+                string passwordHash = HashPassword(registerDto.Password);
+
+                // Generate email verification token (hex is URL-safe, no +/= issues)
+                var verificationToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+
+                // Create user
+                var user = new User
+                {
+                    Username = registerDto.Username,
+                    Email = registerDto.Email,
+                    PasswordHash = passwordHash,
+                    FirstName = registerDto.FirstName ?? string.Empty,
+                    LastName = registerDto.LastName ?? string.Empty,
+                    CreatedAt = DateTime.UtcNow,
+                    IsEmailVerified = false,
+                    EmailVerificationToken = verificationToken,
+                    EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24)
+                };
+
+                _context.Users.Add(user);
+                await _context.SaveChangesAsync();
+
+                // Send verification email
+                try
+                {
+                    await _emailService.SendVerificationEmailAsync(user.Email, user.Username, verificationToken);
+                }
+                catch (Exception emailEx)
+                {
+                    // Roll back the user so they can retry after SMTP is fixed
+                    _context.Users.Remove(user);
+                    await _context.SaveChangesAsync();
+
+                    return StatusCode(500, new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = $"Failed to send verification email: {emailEx.Message}"
+                    });
+                }
+
+                return Ok(new AuthResponseDto
+                {
+                    Success = true,
+                    Message = "Registration successful. Please check your email to verify your account."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new AuthResponseDto
+                {
+                    Success = false,
+                    Message = $"An error occurred: {ex.Message}"
+                });
+            }
+        }
+
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+        {
+            try
+            {
+                // Validate input
+                if (string.IsNullOrWhiteSpace(loginDto.Username) || string.IsNullOrWhiteSpace(loginDto.Password))
+                {
+                    return BadRequest(new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = "Username and password are required"
+                    });
+                }
+
+                // Find user
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Username == loginDto.Username);
+
+                if (user == null || !VerifyPassword(loginDto.Password, user.PasswordHash))
+                {
+                    return Unauthorized(new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = "Invalid username or password"
+                    });
+                }
+
+                if (!user.IsEmailVerified)
+                {
+                    return Unauthorized(new AuthResponseDto
+                    {
+                        Success = false,
+                        Message = "Please verify your email before logging in. Check your inbox for the verification link."
+                    });
+                }
+
+                // Generate token
+                string token = GenerateJwtToken(user);
+
+                return Ok(new AuthResponseDto
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Email = user.Email,
+                    FirstName = user.FirstName,
+                    LastName = user.LastName,
+                    Token = token,
+                    IsAdmin = user.IsAdmin,
+                    IsModerator = user.IsModerator,
+                    Success = true,
+                    Message = "Login successful"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new AuthResponseDto
+                {
+                    Success = false,
+                    Message = $"An error occurred: {ex.Message}"
+                });
+            }
+        }
+
+        [HttpGet("verify-email")]
+        public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    return BadRequest(new { success = false, message = "Verification token is required" });
+                }
+
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.EmailVerificationToken == token && !u.IsDeleted);
+
+                if (user == null)
+                {
+                    return BadRequest(new { success = false, message = "Invalid verification token" });
+                }
+
+                if (user.IsEmailVerified)
+                {
+                    return Ok(new { success = true, message = "Email is already verified" });
+                }
+
+                if (user.EmailVerificationTokenExpiry.HasValue && user.EmailVerificationTokenExpiry < DateTime.UtcNow)
+                {
+                    return BadRequest(new { success = false, message = "Verification token has expired. Please request a new one." });
+                }
+
+                user.IsEmailVerified = true;
+                user.EmailVerificationToken = null;
+                user.EmailVerificationTokenExpiry = null;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { success = true, message = "Email verified successfully. You can now log in." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = $"An error occurred: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("resend-verification")]
+        public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dto.Email))
+                {
+                    return BadRequest(new { success = false, message = "Email is required" });
+                }
+
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email == dto.Email && !u.IsDeleted);
+
+                if (user == null)
+                {
+                    return Ok(new { success = true, message = "If that email exists, a new verification link has been sent." });
+                }
+
+                if (user.IsEmailVerified)
+                {
+                    return Ok(new { success = true, message = "Email is already verified. You can log in." });
+                }
+
+                var verificationToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+                user.EmailVerificationToken = verificationToken;
+                user.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+                await _context.SaveChangesAsync();
+
+                try
+                {
+                    await _emailService.SendVerificationEmailAsync(user.Email, user.Username, verificationToken);
+                }
+                catch (Exception emailEx)
+                {
+                    return StatusCode(500, new { success = false, message = $"Failed to send verification email: {emailEx.Message}" });
+                }
+
+                return Ok(new { success = true, message = "If that email exists, a new verification link has been sent." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = $"An error occurred: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("validate-token")]
+        public IActionResult ValidateToken([FromBody] string token)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(token))
+                {
+                    return BadRequest(new { valid = false, message = "Token is required" });
+                }
+
+                // Simple token validation (check if it can be decoded)
+                var payload = token.Split('.')[1];
+                var jsonData = Encoding.UTF8.GetString(Convert.FromBase64String(
+                    payload + new string('=', (4 - payload.Length % 4) % 4)));
+
+                return Ok(new { valid = true, message = "Token is valid" });
+            }
+            catch
+            {
+                return Unauthorized(new { valid = false, message = "Invalid token" });
+            }
+        }
+
+        private string GenerateJwtToken(User user)
+        {
+            var payload = new
+            {
+                sub = user.Id.ToString(),
+                username = user.Username,
+                email = user.Email,
+                firstName = user.FirstName,
+                lastName = user.LastName,
+                iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                exp = DateTimeOffset.UtcNow.AddDays(7).ToUnixTimeSeconds()
+            };
+
+            // Simple JWT token (for now, returning as JSON string - production should use proper JWT library)
+            string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payload);
+            string header = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"alg\":\"HS256\",\"typ\":\"JWT\"}"));
+            string encodedPayload = Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonPayload));
+
+            using (var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(JwtSecret)))
+            {
+                string signature = Convert.ToBase64String(hmac.ComputeHash(
+                    Encoding.UTF8.GetBytes($"{header}.{encodedPayload}")));
+
+                return $"{header}.{encodedPayload}.{signature}";
+            }
+        }
+
+        private string HashPassword(string password)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+                return Convert.ToBase64String(hashedBytes);
+            }
+        }
+
+        private bool VerifyPassword(string password, string hash)
+        {
+            var hashOfInput = HashPassword(password);
+            return hashOfInput == hash;
+        }
+    }
+}

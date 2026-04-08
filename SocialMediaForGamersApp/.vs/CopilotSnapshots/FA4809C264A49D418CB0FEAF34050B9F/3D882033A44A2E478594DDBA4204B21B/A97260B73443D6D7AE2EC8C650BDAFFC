@@ -1,0 +1,33 @@
+﻿import { useAuth } from '../context/AuthContext'
+
+export default function ProfilePage() {
+  const { user } = useAuth()
+
+  if (!user) {
+    return (
+      <div className="profile-page">
+        <div className="profile-empty">Sign in to view your profile.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="profile-page">
+      <div className="profile-card">
+        <div className="profile-banner" />
+        <div className="profile-info">
+          <div className="profile-avatar-lg" style={{ background: `hsl(${user.username.length * 40}, 60%, 45%)` }}>
+            {user.username.charAt(0).toUpperCase()}
+          </div>
+          <h1>{user.username}</h1>
+          <span className="profile-handle">u/{user.username}</span>
+          <div className="profile-details">
+            {user.firstName && <span>{user.firstName} {user.lastName}</span>}
+            <span>{user.email}</span>
+            {user.isAdmin && <span className="profile-admin-badge">Admin</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

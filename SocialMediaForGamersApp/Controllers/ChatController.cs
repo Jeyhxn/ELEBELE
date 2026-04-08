@@ -1,0 +1,244 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Chat;
+using SocialMediaForGamersApp.Models;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class ChatController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public ChatController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet("users")]
+        public async Task<IActionResult> SearchUsers([FromQuery] int userId, [FromQuery] string search = "")
+        {
+            var query = _context.Users.Where(u => !u.IsDeleted && u.Id != userId);
+
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(u => u.Username.Contains(search));
+
+            var users = await query
+                .OrderBy(u => u.Username)
+                .Take(20)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Username,
+                    u.FirstName,
+                    u.LastName
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
+
+        [HttpGet("conversations")]
+        public async Task<IActionResult> GetConversations([FromQuery] int userId)
+        {
+            var messages = await _context.ChatMessages
+                .Where(m => !m.IsDeleted && (m.SenderId == userId || m.ReceiverId == userId))
+                .Include(m => m.Sender)
+                .Include(m => m.Receiver)
+                .OrderByDescending(m => m.CreatedAt)
+                .ToListAsync();
+
+            var conversations = messages
+                .GroupBy(m => m.SenderId == userId ? m.ReceiverId : m.SenderId)
+                .Select(g =>
+                {
+                    var lastMsg = g.First();
+                    var otherUser = lastMsg.SenderId == userId ? lastMsg.Receiver : lastMsg.Sender;
+                    var unreadCount = g.Count(m => m.ReceiverId == userId && !m.IsRead);
+                    return new
+                    {
+                        UserId = otherUser.Id,
+                        Username = otherUser.Username,
+                        FirstName = otherUser.FirstName,
+                        LastName = otherUser.LastName,
+                        LastMessage = lastMsg.Content,
+                        LastMessageAt = lastMsg.CreatedAt,
+                        UnreadCount = unreadCount,
+                        IsDeleted = otherUser.IsDeleted
+                    };
+                })
+                .Where(c => !c.IsDeleted)
+                .OrderByDescending(c => c.LastMessageAt)
+                .ToList();
+
+            return Ok(conversations);
+        }
+
+        [HttpGet("messages")]
+        public async Task<IActionResult> GetMessages([FromQuery] int userId, [FromQuery] int otherUserId, [FromQuery] int page = 1, [FromQuery] int take = 50)
+        {
+            var messages = await _context.ChatMessages
+                .Where(m => !m.IsDeleted &&
+                    ((m.SenderId == userId && m.ReceiverId == otherUserId) ||
+                     (m.SenderId == otherUserId && m.ReceiverId == userId)))
+                .OrderByDescending(m => m.CreatedAt)
+                .Skip((page - 1) * take)
+                .Take(take)
+                .Select(m => new
+                {
+                    m.Id,
+                    m.SenderId,
+                    m.ReceiverId,
+                    m.Content,
+                    m.CreatedAt,
+                    m.IsRead
+                })
+                .ToListAsync();
+
+            var unread = await _context.ChatMessages
+                .Where(m => !m.IsDeleted && m.SenderId == otherUserId && m.ReceiverId == userId && !m.IsRead)
+                .ToListAsync();
+
+            foreach (var m in unread)
+                m.IsRead = true;
+
+            if (unread.Count > 0)
+                await _context.SaveChangesAsync();
+
+            return Ok(messages.OrderBy(m => m.CreatedAt));
+        }
+
+        [HttpPost("send")]
+        public async Task<IActionResult> SendMessage([FromBody] SendMessageDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Content))
+                return BadRequest(new { message = "Message content is required" });
+
+            var sender = await _context.Users.FindAsync(dto.SenderId);
+            if (sender == null || sender.IsDeleted)
+                return BadRequest(new { message = "Sender not found" });
+
+            var receiver = await _context.Users.FindAsync(dto.ReceiverId);
+            if (receiver == null || receiver.IsDeleted)
+                return BadRequest(new { message = "Receiver not found" });
+
+            var isBlocked = await _context.BlockedUsers
+                .AnyAsync(b => !b.IsDeleted &&
+                    ((b.BlockerId == dto.SenderId && b.BlockedUserId == dto.ReceiverId) ||
+                     (b.BlockerId == dto.ReceiverId && b.BlockedUserId == dto.SenderId)));
+
+            if (isBlocked)
+                return BadRequest(new { message = "Cannot send messages to this user" });
+
+            var areFriends = await _context.Friendships
+                .AnyAsync(f => !f.IsDeleted && f.Status == "Accepted" &&
+                    ((f.RequesterId == dto.SenderId && f.AddresseeId == dto.ReceiverId) ||
+                     (f.RequesterId == dto.ReceiverId && f.AddresseeId == dto.SenderId)));
+
+            if (!areFriends)
+                return BadRequest(new { message = "You must be friends to send messages" });
+
+            var message = new ChatMessage
+            {
+                SenderId = dto.SenderId,
+                ReceiverId = dto.ReceiverId,
+                Content = dto.Content,
+                CreatedAt = DateTime.Now,
+                IsRead = false
+            };
+
+            _context.ChatMessages.Add(message);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message.Id,
+                message.SenderId,
+                message.ReceiverId,
+                message.Content,
+                message.CreatedAt,
+                message.IsRead
+            });
+        }
+
+        [HttpGet("unread-count")]
+        public async Task<IActionResult> GetUnreadCount([FromQuery] int userId)
+        {
+            var friendIds = await _context.Friendships
+                .Where(f => !f.IsDeleted && f.Status == "Accepted" &&
+                    (f.RequesterId == userId || f.AddresseeId == userId))
+                .Select(f => f.RequesterId == userId ? f.AddresseeId : f.RequesterId)
+                .ToListAsync();
+
+            var deletedUserIds = await _context.Users
+                .Where(u => u.IsDeleted && friendIds.Contains(u.Id))
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            var count = await _context.ChatMessages
+                .CountAsync(m => !m.IsDeleted && m.ReceiverId == userId && !m.IsRead
+                    && friendIds.Contains(m.SenderId) && !deletedUserIds.Contains(m.SenderId));
+
+            return Ok(new { count });
+        }
+
+        [HttpPost("block")]
+        public async Task<IActionResult> BlockUser([FromQuery] int userId, [FromQuery] int blockedUserId)
+        {
+            if (userId == blockedUserId)
+                return BadRequest(new { message = "Cannot block yourself" });
+
+            var existing = await _context.BlockedUsers
+                .FirstOrDefaultAsync(b => b.BlockerId == userId && b.BlockedUserId == blockedUserId);
+
+            if (existing != null)
+            {
+                if (!existing.IsDeleted)
+                    return Ok(new { message = "User already blocked" });
+
+                existing.IsDeleted = false;
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "User blocked" });
+            }
+
+            _context.BlockedUsers.Add(new BlockedUser
+            {
+                BlockerId = userId,
+                BlockedUserId = blockedUserId,
+                CreatedAt = DateTime.Now
+            });
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "User blocked" });
+        }
+
+        [HttpPost("unblock")]
+        public async Task<IActionResult> UnblockUser([FromQuery] int userId, [FromQuery] int blockedUserId)
+        {
+            var existing = await _context.BlockedUsers
+                .FirstOrDefaultAsync(b => !b.IsDeleted && b.BlockerId == userId && b.BlockedUserId == blockedUserId);
+
+            if (existing == null)
+                return Ok(new { message = "User is not blocked" });
+
+            existing.IsDeleted = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "User unblocked" });
+        }
+
+        [HttpGet("block-status")]
+        public async Task<IActionResult> GetBlockStatus([FromQuery] int userId, [FromQuery] int otherUserId)
+        {
+            var blockedByMe = await _context.BlockedUsers
+                .AnyAsync(b => !b.IsDeleted && b.BlockerId == userId && b.BlockedUserId == otherUserId);
+
+            var blockedByThem = await _context.BlockedUsers
+                .AnyAsync(b => !b.IsDeleted && b.BlockerId == otherUserId && b.BlockedUserId == userId);
+
+            return Ok(new { blockedByMe, blockedByThem });
+        }
+    }
+}

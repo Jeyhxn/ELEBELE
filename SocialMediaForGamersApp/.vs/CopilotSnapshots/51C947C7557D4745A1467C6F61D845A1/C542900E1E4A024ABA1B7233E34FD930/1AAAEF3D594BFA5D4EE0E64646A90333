@@ -1,0 +1,303 @@
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { getChatConversations, getChatMessages, sendChatMessage, getChatUsers, getChatUnreadCount } from '../api'
+
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+export default function ChatWidget() {
+  const { user } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [view, setView] = useState('conversations') // 'conversations' | 'chat' | 'newChat'
+  const [conversations, setConversations] = useState([])
+  const [messages, setMessages] = useState([])
+  const [activeChat, setActiveChat] = useState(null)
+  const [msgText, setMsgText] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [totalUnread, setTotalUnread] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const messagesEndRef = useRef(null)
+  const pollRef = useRef(null)
+  const searchTimerRef = useRef(null)
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
+  // Fetch total unread count periodically
+  useEffect(() => {
+    if (!user) return
+    const fetchUnread = () => {
+      getChatUnreadCount(user.id)
+        .then(res => setTotalUnread(res.data.count))
+        .catch(() => {})
+    }
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 10000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  // Fetch conversations when widget opens
+  useEffect(() => {
+    if (!user || !open) return
+    loadConversations()
+  }, [user, open])
+
+  // Poll messages when in chat view
+  useEffect(() => {
+    if (!user || !activeChat || view !== 'chat') {
+      if (pollRef.current) clearInterval(pollRef.current)
+      return
+    }
+    const fetchMessages = () => {
+      getChatMessages(user.id, activeChat.userId)
+        .then(res => {
+          setMessages(res.data)
+          // Refresh unread count after reading messages
+          getChatUnreadCount(user.id)
+            .then(r => setTotalUnread(r.data.count))
+            .catch(() => {})
+        })
+        .catch(() => {})
+    }
+    fetchMessages()
+    pollRef.current = setInterval(fetchMessages, 5000)
+    return () => clearInterval(pollRef.current)
+  }, [user, activeChat, view])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, scrollToBottom])
+
+  // User search for new chat
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    if (!searchQuery.trim() || !user) {
+      setSearchResults([])
+      return
+    }
+    searchTimerRef.current = setTimeout(() => {
+      getChatUsers(user.id, searchQuery.trim())
+        .then(res => setSearchResults(res.data))
+        .catch(() => setSearchResults([]))
+    }, 300)
+    return () => clearTimeout(searchTimerRef.current)
+  }, [searchQuery, user])
+
+  const loadConversations = async () => {
+    if (!user) return
+    setLoading(true)
+    try {
+      const res = await getChatConversations(user.id)
+      setConversations(res.data)
+    } catch { }
+    setLoading(false)
+  }
+
+  const openChat = (chatUser) => {
+    setActiveChat(chatUser)
+    setView('chat')
+    setMessages([])
+  }
+
+  const handleSend = async () => {
+    if (!msgText.trim() || !activeChat) return
+    try {
+      await sendChatMessage({
+        senderId: user.id,
+        receiverId: activeChat.userId,
+        content: msgText.trim()
+      })
+      setMsgText('')
+      const res = await getChatMessages(user.id, activeChat.userId)
+      setMessages(res.data)
+    } catch (err) {
+      console.error('Failed to send message:', err)
+    }
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  const goBack = () => {
+    if (view === 'chat' || view === 'newChat') {
+      setView('conversations')
+      setActiveChat(null)
+      setSearchQuery('')
+      setSearchResults([])
+      loadConversations()
+    }
+  }
+
+  const startNewChat = (u) => {
+    openChat({ userId: u.id, username: u.username, firstName: u.firstName, lastName: u.lastName })
+  }
+
+  if (!user) return null
+
+  const avatarColor = (name) => `hsl(${(name || '').length * 40}, 60%, 45%)`
+
+  return (
+    <div className="cw-container">
+      {/* Toggle button */}
+      <button className="cw-toggle" onClick={() => setOpen(o => !o)}>
+        <img src="/assets/icons/comment.png" alt="Chat" className="cw-toggle-icon" />
+        {totalUnread > 0 && <span className="cw-badge">{totalUnread > 9 ? '9+' : totalUnread}</span>}
+      </button>
+
+      {open && (
+        <div className="cw-panel">
+          {/* Header */}
+          <div className="cw-header">
+            {view !== 'conversations' && (
+              <button className="cw-back" onClick={goBack}>←</button>
+            )}
+            <span className="cw-header-title">
+              {view === 'conversations' && 'Chat'}
+              {view === 'newChat' && 'New Message'}
+              {view === 'chat' && activeChat && (
+                <span className="cw-header-user">
+                  <span className="cw-mini-avatar" style={{ background: avatarColor(activeChat.username) }}>
+                    {activeChat.username.charAt(0).toUpperCase()}
+                  </span>
+                  {activeChat.username}
+                </span>
+              )}
+            </span>
+            <div className="cw-header-actions">
+              {view === 'conversations' && (
+                <button className="cw-new-btn" onClick={() => setView('newChat')} title="New message"><img src="/assets/icons/search.png" alt="New" className="cw-header-icon" /></button>
+              )}
+              <button className="cw-close" onClick={() => setOpen(false)}>✕</button>
+            </div>
+          </div>
+
+          {/* Conversations list */}
+          {view === 'conversations' && (
+            <div className="cw-body">
+              {loading ? (
+                <div className="cw-empty">Loading...</div>
+              ) : conversations.length === 0 ? (
+                <div className="cw-empty">
+                  <p>No conversations yet</p>
+                  <button className="cw-start-btn" onClick={() => setView('newChat')}>Start a chat</button>
+                </div>
+              ) : (
+                <div className="cw-conv-list">
+                  {conversations.map(c => (
+                    <button
+                      key={c.userId}
+                      className={`cw-conv-item ${c.unreadCount > 0 ? 'unread' : ''}`}
+                      onClick={() => openChat(c)}
+                    >
+                      <span className="cw-avatar" style={{ background: avatarColor(c.username) }}>
+                        {c.username.charAt(0).toUpperCase()}
+                      </span>
+                      <div className="cw-conv-body">
+                        <div className="cw-conv-top">
+                          <span className="cw-conv-name">{c.username}</span>
+                          <span className="cw-conv-time">{timeAgo(c.lastMessageAt)}</span>
+                        </div>
+                        <span className="cw-conv-preview">{c.lastMessage}</span>
+                      </div>
+                      {c.unreadCount > 0 && <span className="cw-unread-dot">{c.unreadCount}</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* New chat search */}
+          {view === 'newChat' && (
+            <div className="cw-body">
+              <div className="cw-search-wrap">
+                <input
+                  className="cw-search-input"
+                  type="text"
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="cw-conv-list">
+                {searchResults.map(u => (
+                  <button key={u.id} className="cw-conv-item" onClick={() => startNewChat(u)}>
+                    <span className="cw-avatar" style={{ background: avatarColor(u.username) }}>
+                      {u.username.charAt(0).toUpperCase()}
+                    </span>
+                    <div className="cw-conv-body">
+                      <span className="cw-conv-name">{u.username}</span>
+                      {(u.firstName || u.lastName) && (
+                        <span className="cw-conv-preview">{u.firstName} {u.lastName}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+                {searchQuery.trim() && searchResults.length === 0 && (
+                  <div className="cw-empty">No users found</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Chat messages */}
+          {view === 'chat' && (
+            <>
+              <div className="cw-messages">
+                {messages.length === 0 ? (
+                  <div className="cw-empty">Send the first message!</div>
+                ) : (
+                  messages.map(m => (
+                    <div
+                      key={m.id}
+                      className={`cw-msg ${m.senderId === user.id ? 'sent' : 'received'}`}
+                    >
+                      <div className="cw-msg-bubble">
+                        <p className="cw-msg-text">{m.content}</p>
+                        <span className="cw-msg-time">{timeAgo(m.createdAt)}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+              <div className="cw-input-bar">
+                <input
+                  className="cw-msg-input"
+                  type="text"
+                  placeholder="Type a message..."
+                  value={msgText}
+                  onChange={(e) => setMsgText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  autoFocus
+                />
+                <button
+                  className="cw-send-btn"
+                  onClick={handleSend}
+                  disabled={!msgText.trim()}
+                >
+                  ➤
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

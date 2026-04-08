@@ -1,0 +1,242 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Settings;
+using SocialMediaForGamersApp.Models;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class SettingsController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public SettingsController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpPut("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.CurrentPassword) || string.IsNullOrWhiteSpace(dto.NewPassword))
+                return BadRequest(new { success = false, message = "Current and new password are required" });
+
+            if (dto.NewPassword.Length < 6)
+                return BadRequest(new { success = false, message = "New password must be at least 6 characters" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            if (!VerifyPassword(dto.CurrentPassword, user.PasswordHash))
+                return BadRequest(new { success = false, message = "Current password is incorrect" });
+
+            user.PasswordHash = HashPassword(dto.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Password changed successfully" });
+        }
+
+        [HttpPut("change-profile-name")]
+        public async Task<IActionResult> ChangeProfileName([FromBody] ChangeProfileNameDto dto)
+        {
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            user.FirstName = dto.FirstName?.Trim() ?? string.Empty;
+            user.LastName = dto.LastName?.Trim() ?? string.Empty;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                success = true,
+                message = "Profile name updated",
+                firstName = user.FirstName,
+                lastName = user.LastName
+            });
+        }
+
+        [HttpPut("change-username")]
+        public async Task<IActionResult> ChangeUsername([FromBody] ChangeUsernameDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.NewUsername))
+                return BadRequest(new { success = false, message = "Username is required" });
+
+            var trimmed = dto.NewUsername.Trim();
+            if (trimmed.Length < 3 || trimmed.Length > 20)
+                return BadRequest(new { success = false, message = "Username must be between 3 and 20 characters" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            var taken = await _context.Users.AnyAsync(u => u.Username == trimmed && u.Id != dto.UserId && !u.IsDeleted);
+            if (taken)
+                return BadRequest(new { success = false, message = "Username is already taken" });
+
+            user.Username = trimmed;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Username updated", username = user.Username });
+        }
+
+        [HttpDelete("delete-account")]
+        public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Password))
+                return BadRequest(new { success = false, message = "Password is required to delete account" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            if (!VerifyPassword(dto.Password, user.PasswordHash))
+                return BadRequest(new { success = false, message = "Password is incorrect" });
+
+            user.IsDeleted = true;
+
+            var posts = await _context.Posts.Where(p => p.UserId == dto.UserId && !p.IsDeleted).ToListAsync();
+            foreach (var p in posts) p.IsDeleted = true;
+
+            var postComments = await _context.PostComments.Where(c => c.UserId == dto.UserId && !c.IsDeleted).ToListAsync();
+            foreach (var c in postComments) c.IsDeleted = true;
+
+            var postVotes = await _context.PostVotes.Where(v => v.UserId == dto.UserId).ToListAsync();
+            _context.PostVotes.RemoveRange(postVotes);
+
+            var gameComments = await _context.Comments.Where(c => c.UserId == dto.UserId && !c.IsDeleted).ToListAsync();
+            foreach (var c in gameComments) c.IsDeleted = true;
+
+            var memberships = await _context.CommunityMembers.Where(m => m.UserId == dto.UserId && !m.IsDeleted).ToListAsync();
+            foreach (var m in memberships) m.IsDeleted = true;
+
+            var notifications = await _context.Notifications.Where(n => n.UserId == dto.UserId && !n.IsDeleted).ToListAsync();
+            foreach (var n in notifications) n.IsDeleted = true;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Account deleted successfully" });
+        }
+
+        [HttpDelete("clear-history")]
+        public async Task<IActionResult> ClearHistory([FromQuery] int userId)
+        {
+            var views = await _context.PostViews.Where(v => v.UserId == userId).ToListAsync();
+            _context.PostViews.RemoveRange(views);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "View history cleared" });
+        }
+
+        [HttpGet("notification-preferences")]
+        public async Task<IActionResult> GetNotificationPreferences([FromQuery] int userId)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            return Ok(new
+            {
+                notifyNewPosts = user.NotifyNewPosts,
+                notifyCommentReplies = user.NotifyCommentReplies,
+                notifyPostVotes = user.NotifyPostVotes
+            });
+        }
+
+        [HttpPut("notification-preferences")]
+        public async Task<IActionResult> UpdateNotificationPreferences([FromBody] UpdateNotificationSettingsDto dto)
+        {
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return NotFound(new { success = false, message = "User not found" });
+
+            user.NotifyNewPosts = dto.NotifyNewPosts;
+            user.NotifyCommentReplies = dto.NotifyCommentReplies;
+            user.NotifyPostVotes = dto.NotifyPostVotes;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Notification preferences updated" });
+        }
+
+        [HttpGet("muted-communities")]
+        public async Task<IActionResult> GetMutedCommunities([FromQuery] int userId)
+        {
+            var muted = await _context.MutedCommunities
+                .Where(mc => mc.UserId == userId && !mc.IsDeleted)
+                .Include(mc => mc.Community)
+                .Where(mc => !mc.Community.IsDeleted)
+                .Select(mc => new
+                {
+                    mc.Id,
+                    mc.CommunityId,
+                    CommunityName = mc.Community.Name
+                })
+                .ToListAsync();
+
+            return Ok(muted);
+        }
+
+        [HttpPost("mute-community")]
+        public async Task<IActionResult> MuteCommunity([FromQuery] int userId, [FromQuery] int communityId)
+        {
+            var community = await _context.Communities.FindAsync(communityId);
+            if (community == null || community.IsDeleted)
+                return NotFound(new { success = false, message = "Community not found" });
+
+            var existing = await _context.MutedCommunities
+                .FirstOrDefaultAsync(mc => mc.UserId == userId && mc.CommunityId == communityId);
+
+            if (existing != null)
+            {
+                if (!existing.IsDeleted)
+                    return Ok(new { success = true, message = "Community already muted" });
+
+                existing.IsDeleted = false;
+                await _context.SaveChangesAsync();
+                return Ok(new { success = true, message = "Community muted" });
+            }
+
+            _context.MutedCommunities.Add(new MutedCommunity
+            {
+                UserId = userId,
+                CommunityId = communityId,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Community muted" });
+        }
+
+        [HttpPost("unmute-community")]
+        public async Task<IActionResult> UnmuteCommunity([FromQuery] int userId, [FromQuery] int communityId)
+        {
+            var muted = await _context.MutedCommunities
+                .FirstOrDefaultAsync(mc => mc.UserId == userId && mc.CommunityId == communityId && !mc.IsDeleted);
+
+            if (muted == null)
+                return Ok(new { success = true, message = "Community is not muted" });
+
+            muted.IsDeleted = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { success = true, message = "Community unmuted" });
+        }
+
+        private string HashPassword(string password)
+        {
+            using var sha256 = SHA256.Create();
+            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            return Convert.ToBase64String(hashedBytes);
+        }
+
+        private bool VerifyPassword(string password, string hash)
+        {
+            return HashPassword(password) == hash;
+        }
+    }
+}

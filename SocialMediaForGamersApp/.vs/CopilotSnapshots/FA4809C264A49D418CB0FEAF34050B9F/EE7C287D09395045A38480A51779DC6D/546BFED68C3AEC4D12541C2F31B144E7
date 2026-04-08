@@ -1,0 +1,14 @@
+﻿namespace SocialMediaForGamersApp.Models
+{
+    public class PostComment : BaseEntity
+    {
+        public string Content { get; set; }
+        public int PostId { get; set; }
+        public Post Post { get; set; }
+        public int UserId { get; set; }
+        public User User { get; set; }
+        public int? ParentCommentId { get; set; }
+        public PostComment? ParentComment { get; set; }
+        public List<PostComment> Replies { get; set; } = new();
+    }
+}

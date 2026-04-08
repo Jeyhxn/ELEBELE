@@ -1,0 +1,84 @@
+﻿import axios from 'axios'
+
+// Try both HTTP and HTTPS
+const API_BASE = 'http://localhost:5000/api'
+
+const apiClient = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Error handler with detailed logging
+apiClient.interceptors.response.use(
+  response => {
+    console.log('✅ API Response:', response.config.url, response.status)
+    return response
+  },
+  error => {
+    console.error('❌ API Error Details:')
+    console.error('  URL:', error.config?.url)
+    console.error('  Status:', error.response?.status)
+    console.error('  Message:', error.message)
+    console.error('  Full Error:', error)
+    return Promise.reject(error)
+  }
+)
+
+// Test connection
+export const testConnection = async () => {
+  try {
+    const response = await apiClient.get('/category?page=1&take=1')
+    return { success: true, message: 'Connected to API' }
+  } catch (err) {
+    return { success: false, message: err.message }
+  }
+}
+
+// Categories
+export const getCategories = (page = 1, take = 10) =>
+  apiClient.get('/category', { params: { page, take } })
+
+export const getCategoryById = (id) =>
+  apiClient.get(`/category/${id}`)
+
+export const createCategory = (data) =>
+  apiClient.post('/category', data)
+
+// Games
+export const getGames = (page = 1, take = 3) =>
+  apiClient.get('/game', { params: { page, take } })
+
+export const getGameById = (id) =>
+  apiClient.get(`/game/${id}`)
+
+export const getGameCreationOptions = () =>
+  apiClient.get('/game/creation-options')
+
+export const createGame = (data) =>
+  apiClient.post('/game', data)
+
+export const updateGame = (id, data) =>
+  apiClient.put(`/game/${id}`, data)
+
+export const deleteGame = (id) =>
+  apiClient.delete(`/game/${id}`)
+
+// Platforms
+export const getPlatforms = (page = 1, take = 10) =>
+  apiClient.get('/platform', { params: { page, take } })
+
+export const getPlatformById = (id) =>
+  apiClient.get(`/platform/${id}`)
+
+export const createPlatform = (data) =>
+  apiClient.post('/platform', data)
+
+export const updatePlatform = (id, data) =>
+  apiClient.put(`/platform/${id}`, data)
+
+export const deletePlatform = (id) =>
+  apiClient.delete(`/platform/${id}`)
+
+export default apiClient

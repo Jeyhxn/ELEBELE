@@ -1,0 +1,41 @@
+﻿import './index.css'
+import GamesList from './components/GamesList'
+import CategoriesList from './components/CategoriesList'
+import PlatformsList from './components/PlatformsList'
+import ConnectionTest from './components/ConnectionTest'
+
+export default function App() {
+  return (
+    <div className="app">
+      <nav className="navbar">
+        <div className="nav-container">
+          <h1>🎮 Social Media for Gamers</h1>
+          <ul className="nav-menu">
+            <li><a href="#categories">Categories</a></li>
+            <li><a href="#games">Games</a></li>
+            <li><a href="#platforms">Platforms</a></li>
+          </ul>
+        </div>
+      </nav>
+
+      <main className="container">
+        <ConnectionTest />
+
+        <section id="categories" className="section">
+          <h2>Categories</h2>
+          <CategoriesList />
+        </section>
+
+        <section id="games" className="section">
+          <h2>Games</h2>
+          <GamesList />
+        </section>
+
+        <section id="platforms" className="section">
+          <h2>Platforms</h2>
+          <PlatformsList />
+        </section>
+      </main>
+    </div>
+  )
+}

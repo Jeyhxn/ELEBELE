@@ -1,0 +1,20 @@
+﻿using System.Text.Json.Serialization;
+
+namespace SocialMediaForGamersApp.Models
+{
+    public class Game : BaseEntity
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public DateTime ReleaseDate { get; set; }
+        public string Developer { get; set; }
+        public string Publisher { get; set; }
+        public double Rating { get; set; }
+        public string ImageURL { get; set; }
+
+        public List<GamePlatform> GamePlatforms { get; set; }
+
+        public Category Category { get; set; }
+        public int CategoryId { get; set; }
+    }
+}

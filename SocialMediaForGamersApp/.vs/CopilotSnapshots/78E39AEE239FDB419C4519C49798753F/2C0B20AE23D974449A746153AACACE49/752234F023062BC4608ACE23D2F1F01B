@@ -1,0 +1,8 @@
+﻿namespace SocialMediaForGamersApp.Models
+{
+    public class Category : BaseEntity
+    {
+        public string Name { get; set; }
+        public List<Game>? Games { get; set; }
+    }
+}

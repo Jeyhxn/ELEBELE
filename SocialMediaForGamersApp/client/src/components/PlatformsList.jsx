@@ -1,0 +1,89 @@
+import { useState, useEffect } from 'react'
+import { getPlatforms, createPlatform } from '../api'
+
+export default function PlatformsList() {
+  const [platforms, setPlatforms] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [newName, setNewName] = useState('')
+  const [showForm, setShowForm] = useState(false)
+
+  useEffect(() => {
+    fetchPlatforms()
+  }, [])
+
+  const fetchPlatforms = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      console.log('Fetching platforms from: http://localhost:5000/api/platform')
+      const response = await getPlatforms(1, 10)
+      console.log('Platforms response:', response.data)
+      setPlatforms(response.data)
+    } catch (err) {
+      console.error('Full error:', err)
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to load platforms: ' + errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!newName.trim()) return
+
+    try {
+      setError(null)
+      await createPlatform({ name: newName })
+      setNewName('')
+      setShowForm(false)
+      fetchPlatforms()
+    } catch (err) {
+      console.error('Create error:', err)
+      const errorMsg = err.response?.data?.message || err.message || 'Unknown error'
+      setError('Failed to create platform: ' + errorMsg)
+    }
+  }
+
+  if (loading) return <div className="loading">Loading platforms...</div>
+  if (error) return <div className="error">{error}</div>
+
+  return (
+    <div>
+      <button onClick={() => setShowForm(!showForm)}>
+        {showForm ? 'Cancel' : 'Add Platform'}
+      </button>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} style={{ marginTop: '1rem' }}>
+          <div className="form-group">
+            <label>Platform Name</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="e.g., PC, PlayStation 5, Xbox Series X"
+              required
+            />
+          </div>
+          <button type="submit">Create Platform</button>
+        </form>
+      )}
+
+      <div style={{ marginTop: '1rem' }}>
+        {platforms.length === 0 ? (
+          <p>No platforms yet. Create one!</p>
+        ) : (
+          <div className="grid">
+            {platforms.map(plat => (
+              <div key={plat.id} className="card">
+                <h3>{plat.name}</h3>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

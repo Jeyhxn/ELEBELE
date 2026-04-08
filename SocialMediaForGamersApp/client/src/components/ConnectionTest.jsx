@@ -1,0 +1,51 @@
+import { useState, useEffect } from 'react'
+import { testConnection } from '../api'
+
+export default function ConnectionTest() {
+  const [status, setStatus] = useState('Testing...')
+  const [isConnected, setIsConnected] = useState(false)
+  const [details, setDetails] = useState('')
+
+  useEffect(() => {
+    const test = async () => {
+      console.log('Starting connection test...')
+      const result = await testConnection()
+      setStatus(result.message)
+      setIsConnected(result.success)
+
+      // Show connection details
+      if (result.success) {
+        setDetails('✅ Backend is reachable. You can now use the app!')
+      } else {
+        setDetails(
+          '⚠️ Cannot reach backend. Try:\n' +
+          '1. Press F5 to run your .NET project\n' +
+          '2. Check that it shows "Now listening on: https://localhost:5000"\n' +
+          '3. Refresh this page\n\n' +
+          'Open DevTools (F12) → Console to see detailed errors'
+        )
+      }
+    }
+    test()
+  }, [])
+
+  return (
+    <div style={{
+      padding: '1rem',
+      margin: '1rem 0',
+      backgroundColor: isConnected ? '#efe' : '#fee',
+      border: `2px solid ${isConnected ? '#3c3' : '#c33'}`,
+      borderRadius: '4px',
+      color: isConnected ? '#3c3' : '#c33',
+      fontFamily: 'monospace'
+    }}>
+      <strong style={{ fontSize: '1.1rem' }}>🔗 Backend Connection</strong>
+      <div style={{ marginTop: '0.5rem' }}>{status}</div>
+      {details && (
+        <div style={{ marginTop: '1rem', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>
+          {details}
+        </div>
+      )}
+    </div>
+  )
+}

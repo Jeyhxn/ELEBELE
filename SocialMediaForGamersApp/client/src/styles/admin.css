@@ -1,0 +1,266 @@
+/* ===========================
+   Admin Panel
+   =========================== */
+.admin-panel {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+.admin-header { margin-bottom: 1.5rem; }
+.admin-header h1 { font-size: 1.8rem; color: #1a1a1a; }
+.admin-header p { color: #666; margin-top: 0.25rem; }
+
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 0.75rem;
+}
+
+.admin-tab-btn {
+  padding: 0.6rem 1.25rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-tab-btn:hover { border-color: #764ba2; color: #764ba2; }
+
+.admin-tab-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.admin-content {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+/* Stats Grid */
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.admin-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 1rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  text-align: center;
+  gap: 0.25rem;
+}
+
+.stat-icon { font-size: 1.8rem; }
+.stat-value { font-size: 1.8rem; font-weight: 700; color: #1a1a1a; }
+.stat-label { font-size: 0.8rem; color: #555; font-weight: 500; }
+
+/* Section headers */
+.admin-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.admin-section-header h2 { font-size: 1.2rem; color: #1a1a1a; }
+
+.admin-section-header button {
+  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.admin-section-header button:hover { opacity: 0.85; }
+
+/* Inline form */
+.admin-inline-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-inline-form input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.admin-inline-form input:focus { outline: none; border-color: #764ba2; }
+
+.admin-inline-form button {
+  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Game creation form */
+.admin-form {
+  background: #f9f9f9;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.admin-form h3 { margin-bottom: 1rem; color: #1a1a1a; }
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.admin-form .form-group label { font-size: 0.85rem; font-weight: 600; color: #555; }
+
+.admin-form .form-group input,
+.admin-form .form-group textarea,
+.admin-form .form-group select {
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  margin: 0;
+}
+
+.admin-form .form-group input:focus,
+.admin-form .form-group textarea:focus,
+.admin-form .form-group select:focus {
+  outline: none;
+  border-color: #764ba2;
+}
+
+/* Checkbox group */
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.checkbox-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border: 2px solid #ddd;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.checkbox-item:hover { border-color: #764ba2; }
+
+.checkbox-item.selected {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.checkbox-item input[type="checkbox"] { display: none; }
+
+.no-options { color: #999; font-size: 0.85rem; font-style: italic; }
+
+.admin-form > button[type="submit"] {
+  margin-top: 1rem;
+  padding: 0.6rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.admin-form > button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Table */
+.admin-table-wrapper { overflow-x: auto; }
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+.admin-table th { background: #f5f5f5; font-weight: 700; color: #333; }
+.admin-table tr:hover td { background: #fafafa; }
+
+/* Action buttons */
+.admin-btn {
+  padding: 0.35rem 0.85rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.admin-btn:hover { opacity: 0.8; }
+.admin-btn.danger { background-color: #f44336; color: white; }
+.admin-btn.success { background-color: #4CAF50; color: white; }
+.admin-btn.warning { background-color: #ff9800; color: white; }
+
+.admin-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.admin-badge {
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: #f0f0f0;
+  color: #666;
+}
+
+.admin-badge.admin { background: #fff3e0; color: #e65100; }

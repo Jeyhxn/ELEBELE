@@ -1,0 +1,486 @@
+﻿import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import {
+  getPostFeed, createPost, votePost, deletePost,
+  getCommunities, createCommunity, joinCommunity, leaveCommunity, getMyCommunities
+} from '../api'
+
+const SORTS = [
+  { key: 'new', label: '🕐 New' },
+  { key: 'top', label: '🔥 Top' },
+  { key: 'hot', label: '⚡ Hot' }
+]
+
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+function PostCard({ post, user, onVote, onComment, onDelete }) {
+  const [comments] = useState(post.comments || [])
+  const [upvotes, setUpvotes] = useState(post.upvotes || 0)
+  const [downvotes, setDownvotes] = useState(post.downvotes || 0)
+  const [userVote, setUserVote] = useState(post.userVote)
+  const navigate = useNavigate()
+
+  const handleVote = async (isUpvote) => {
+    if (!user) return
+    try {
+      const res = await votePost({ postId: post.id, userId: user.id, isUpvote })
+      setUpvotes(res.data.upvotes)
+      setDownvotes(res.data.downvotes)
+      setUserVote(res.data.userVote)
+    } catch (err) {
+      console.error('Vote failed:', err)
+    }
+  }
+
+  const goToPost = () => {
+    navigate(`/community/post/${post.id}`)
+  }
+
+  return (
+    <div className="post-card post-card-clickable" onClick={goToPost}>
+      {/* Post body */}
+      <div className="post-body">
+        <div className="post-meta" onClick={e => e.stopPropagation()}>
+          <span className="post-author">👤 {post.author.username}</span>
+          {post.community && <span className="post-game">🎮 {post.community.name}</span>}
+          <span className="post-time">{timeAgo(post.createdAt)}</span>
+        </div>
+
+        <h3 className="post-title">{post.title}</h3>
+        <p className="post-content">{post.content}</p>
+
+        {post.mediaURL && (
+          <div className="post-image">
+            <img src={`https://localhost:7271${post.mediaURL}`} alt="" />
+          </div>
+        )}
+        {!post.mediaURL && post.imageURL && (
+          <div className="post-image">
+            <img src={post.imageURL} alt="" />
+          </div>
+        )}
+
+        <div className="post-actions-bar" onClick={e => e.stopPropagation()}>
+          <div className="post-vote-pill">
+            <button
+              className={`post-vote-btn like${userVote === true ? ' active' : ''}`}
+              onClick={() => handleVote(true)}
+              disabled={!user}
+            ><img src="/assets/icons/like.png" alt="" className="vote-icon" /></button>
+            <span className="post-vote-count">{upvotes}</span>
+          </div>
+          <div className="post-vote-pill">
+            <button
+              className={`post-vote-btn dislike${userVote === false ? ' active' : ''}`}
+              onClick={() => handleVote(false)}
+              disabled={!user}
+            ><img src="/assets/icons/dislike.png" alt="" className="vote-icon" /></button>
+            <span className="post-vote-count">{downvotes}</span>
+          </div>
+          <span className="post-action-btn">
+            💬 {comments.length} Comment{comments.length !== 1 ? 's' : ''}
+          </span>
+          {user && (user.id === post.author.id || user.isAdmin) && (
+            <button className="post-action-btn delete" onClick={() => onDelete(post.id)}>
+              <img src="/assets/icons/trash.png" alt="" className="action-icon" /> Delete
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CreatePostForm({ user, communities, onCreated, onCancel, defaultCommunityId }) {
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
+  const [communityId, setCommunityId] = useState(defaultCommunityId || '')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [mediaFile, setMediaFile] = useState(null)
+  const [mediaPreview, setMediaPreview] = useState(null)
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const isImage = file.type.startsWith('image/')
+    if (!isImage) {
+      setError('Only images and GIFs are supported')
+      e.target.value = ''
+      return
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      setError('Images/GIFs must be less than 15MB')
+      e.target.value = ''
+      return
+    }
+
+    setError('')
+    setMediaFile(file)
+    setMediaPreview(URL.createObjectURL(file))
+  }
+
+  const removeMedia = () => {
+    setMediaFile(null)
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview)
+    setMediaPreview(null)
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!title.trim() || !content.trim()) {
+      setError('Title and content are required')
+      return
+    }
+    if (!communityId) {
+      setError('Please select a community')
+      return
+    }
+    try {
+      setSubmitting(true)
+      const formData = new FormData()
+      formData.append('title', title.trim())
+      formData.append('content', content.trim())
+      formData.append('communityId', communityId)
+      formData.append('userId', user.id)
+      if (mediaFile) formData.append('media', mediaFile)
+
+      await createPost(formData)
+      setTitle('')
+      setContent('')
+      setCommunityId(defaultCommunityId || '')
+      removeMedia()
+      onCreated()
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to create post')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!user) return null
+
+  return (
+    <div className="create-post">
+      <form className="create-post-form" onSubmit={handleSubmit}>
+        <h3>Create Post</h3>
+        {error && <div className="post-error">{error}</div>}
+        <select value={communityId} onChange={(e) => setCommunityId(e.target.value)} required>
+          <option value="">-- Select a community --</option>
+          {communities.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <input
+          placeholder="Title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+        <textarea
+          placeholder="What's on your mind?"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={4}
+          required
+        />
+
+        {/* Media picker */}
+        <div className="media-picker">
+          {!mediaFile ? (
+            <label className="media-picker-btn">
+              📷 Add Photo / GIF
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={handleFileChange}
+                hidden
+              />
+            </label>
+          ) : (
+            <div className="media-preview">
+              <img src={mediaPreview} alt="Preview" />
+              <button type="button" className="media-remove-btn" onClick={removeMedia}>✕</button>
+            </div>
+          )}
+        </div>
+
+        <div className="create-post-actions">
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Posting...' : 'Post'}
+          </button>
+          <button type="button" className="cancel-btn" onClick={() => { removeMedia(); onCancel() }}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function CommunitySidebar({ communities, activeCommunityId, onSelectCommunity, user, onJoin, onLeave, myCommunityIds }) {
+  return (
+    <aside className="community-sidebar">
+      <nav className="community-sidebar-nav">
+        <button
+          className={`sidebar-nav-item ${activeCommunityId === null ? 'active' : ''}`}
+          onClick={() => onSelectCommunity(null)}
+        >
+          <span className="sidebar-nav-icon">🏠</span>
+          <span>All Posts</span>
+        </button>
+      </nav>
+
+      <div className="sidebar-section">
+        <h4 className="sidebar-section-title">Communities</h4>
+        <div className="sidebar-communities">
+          {communities.map(c => (
+            <div key={c.id} className="sidebar-community-row">
+              <button
+                className={`sidebar-community-item ${activeCommunityId === c.id ? 'active' : ''}`}
+                onClick={() => onSelectCommunity(c.id)}
+              >
+                <span className="sidebar-community-icon">🎮</span>
+                <span>{c.name}</span>
+                <span className="sidebar-community-count">{c.memberCount}</span>
+              </button>
+              {user && (
+                myCommunityIds.includes(c.id) ? (
+                  <button className="community-join-btn joined" onClick={() => onLeave(c.id)}>Joined</button>
+                ) : (
+                  <button className="community-join-btn" onClick={() => onJoin(c.id)}>Join</button>
+                )
+              )}
+            </div>
+          ))}
+          {communities.length === 0 && (
+            <span className="sidebar-recent-hint">No communities yet</span>
+          )}
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+export default function CommunityFeed({ searchQuery, showCreateModal, setShowCreateModal }) {
+  const { user } = useAuth()
+  const [posts, setPosts] = useState([])
+  const [sort, setSort] = useState('new')
+  const [loading, setLoading] = useState(true)
+  const [activeCommunityId, setActiveCommunityId] = useState(null)
+  const [communities, setCommunities] = useState([])
+  const [allCommunities, setAllCommunities] = useState([])
+  const [myCommunityIds, setMyCommunityIds] = useState([])
+  const [showCreateCommunity, setShowCreateCommunity] = useState(false)
+  const [newCommunityName, setNewCommunityName] = useState('')
+  const [newCommunityDesc, setNewCommunityDesc] = useState('')
+  const [communityError, setCommunityError] = useState('')
+
+  useEffect(() => {
+    loadAllCommunities()
+  }, [])
+
+  useEffect(() => {
+    if (user) {
+      getMyCommunities(user.id)
+        .then(res => setMyCommunityIds(res.data.map(c => c.id)))
+        .catch(() => {})
+    }
+  }, [user])
+
+  useEffect(() => {
+    loadPosts()
+  }, [sort, activeCommunityId, searchQuery])
+
+  const loadAllCommunities = async () => {
+    try {
+      const res = await getCommunities()
+      setCommunities(res.data)
+      setAllCommunities(res.data)
+    } catch (err) {
+      console.error('Failed to load communities:', err)
+    }
+  }
+
+  const loadCommunities = loadAllCommunities
+
+  const loadPosts = async () => {
+    try {
+      setLoading(true)
+      const res = await getPostFeed(1, 50, sort, activeCommunityId, searchQuery || null, user?.id || null)
+      setPosts(res.data)
+    } catch (err) {
+      console.error('Failed to load posts:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDelete = async (postId) => {
+    if (!confirm('Delete this post?')) return
+    try {
+      await deletePost(postId, user.id)
+      setPosts(prev => prev.filter(p => p.id !== postId))
+    } catch (err) {
+      console.error('Delete failed:', err)
+    }
+  }
+
+  const handleJoin = async (communityId) => {
+    if (!user) return
+    try {
+      await joinCommunity(communityId, user.id)
+      setMyCommunityIds(prev => [...prev, communityId])
+      loadCommunities()
+    } catch (err) {
+      console.error('Join failed:', err)
+    }
+  }
+
+  const handleLeave = async (communityId) => {
+    if (!user) return
+    try {
+      await leaveCommunity(communityId, user.id)
+      setMyCommunityIds(prev => prev.filter(id => id !== communityId))
+      loadCommunities()
+    } catch (err) {
+      console.error('Leave failed:', err)
+    }
+  }
+
+  const handleCreateCommunity = async (e) => {
+    e.preventDefault()
+    setCommunityError('')
+    if (!newCommunityName.trim()) return
+    try {
+      await createCommunity({
+        name: newCommunityName.trim(),
+        description: newCommunityDesc.trim() || null,
+        userId: user.id
+      })
+      setNewCommunityName('')
+      setNewCommunityDesc('')
+      setShowCreateCommunity(false)
+      loadCommunities()
+      getMyCommunities(user.id)
+        .then(res => setMyCommunityIds(res.data.map(c => c.id)))
+        .catch(() => {})
+    } catch (err) {
+      setCommunityError(err.response?.data?.message || 'Failed to create community')
+    }
+  }
+
+  const activeCommunity = activeCommunityId
+    ? allCommunities.find(c => c.id === activeCommunityId)
+    : null
+
+  return (
+    <div className="community-layout">
+      <CommunitySidebar
+        communities={allCommunities}
+        activeCommunityId={activeCommunityId}
+        onSelectCommunity={setActiveCommunityId}
+        user={user}
+        onJoin={handleJoin}
+        onLeave={handleLeave}
+        myCommunityIds={myCommunityIds}
+      />
+
+      <div className="community-main">
+        <div className="community-header">
+          <h1>{activeCommunity ? `🎮 ${activeCommunity.name}` : '💬 Community'}</h1>
+          <p>{activeCommunity ? `${activeCommunity.memberCount} members · ${activeCommunity.postCount} posts` : 'Talk about games, share your thoughts'}</p>
+        </div>
+
+        {user && (
+          <div className="community-actions-bar">
+            {!showCreateCommunity && (
+              <button className="community-action-btn" onClick={() => setShowCreateCommunity(true)}>
+                + New Community
+              </button>
+            )}
+          </div>
+        )}
+
+        {showCreateCommunity && user && (
+          <div className="create-post">
+            <form className="create-post-form" onSubmit={handleCreateCommunity}>
+              <h3>Create Community</h3>
+              {communityError && <div className="post-error">{communityError}</div>}
+              <input
+                placeholder="Community name"
+                value={newCommunityName}
+                onChange={(e) => setNewCommunityName(e.target.value)}
+                required
+              />
+              <textarea
+                placeholder="Description (optional)"
+                value={newCommunityDesc}
+                onChange={(e) => setNewCommunityDesc(e.target.value)}
+                rows={2}
+              />
+              <div className="create-post-actions">
+                <button type="submit">Create</button>
+                <button type="button" className="cancel-btn" onClick={() => setShowCreateCommunity(false)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {showCreateModal && user && (
+          <CreatePostForm
+            user={user}
+            communities={allCommunities}
+            defaultCommunityId={activeCommunityId ? String(activeCommunityId) : ''}
+            onCreated={() => { loadPosts(); setShowCreateModal(false) }}
+            onCancel={() => setShowCreateModal(false)}
+          />
+        )}
+
+        <div className="sort-bar">
+          {SORTS.map(s => (
+            <button
+              key={s.key}
+              className={`sort-btn ${sort === s.key ? 'active' : ''}`}
+              onClick={() => setSort(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="loading">Loading posts...</div>
+        ) : posts.length === 0 ? (
+          <div className="empty-feed">
+            <p>{searchQuery ? 'No posts match your search.' : 'No posts yet. Be the first to share something!'}</p>
+          </div>
+        ) : (
+          <div className="posts-feed">
+            {posts.map(post => (
+              <PostCard
+                key={post.id}
+                post={post}
+                user={user}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

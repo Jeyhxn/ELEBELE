@@ -1,0 +1,107 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AdminController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public AdminController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        private async Task<bool> IsAdminAsync(int adminId)
+        {
+            var user = await _context.Users.FindAsync(adminId);
+            return user != null && user.IsAdmin && !user.IsDeleted;
+        }
+
+        [HttpGet("stats")]
+        public async Task<IActionResult> GetStats([FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            var stats = new
+            {
+                TotalGames = await _context.Games.CountAsync(g => !g.IsDeleted),
+                TotalUsers = await _context.Users.CountAsync(u => !u.IsDeleted),
+                TotalComments = await _context.Comments.CountAsync(c => !c.IsDeleted),
+                TotalCategories = await _context.Categories.CountAsync(c => !c.IsDeleted),
+                TotalPlatforms = await _context.Platforms.CountAsync(p => !p.IsDeleted),
+                TotalTags = await _context.Tags.CountAsync(t => !t.IsDeleted),
+                PositiveComments = await _context.Comments.CountAsync(c => !c.IsDeleted && c.IsPositive),
+                NegativeComments = await _context.Comments.CountAsync(c => !c.IsDeleted && !c.IsPositive),
+            };
+
+            return Ok(stats);
+        }
+
+        [HttpGet("users")]
+        public async Task<IActionResult> GetUsers([FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            var users = await _context.Users
+                .Where(u => !u.IsDeleted)
+                .OrderBy(u => u.Username)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Username,
+                    u.Email,
+                    u.FirstName,
+                    u.LastName,
+                    u.IsAdmin,
+                    u.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
+
+        [HttpPut("users/{id}/toggle-admin")]
+        public async Task<IActionResult> ToggleAdmin(int id, [FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            if (id == adminId)
+                return BadRequest(new { message = "You cannot change your own admin status" });
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || user.IsDeleted)
+                return NotFound();
+
+            user.IsAdmin = !user.IsAdmin;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { user.Id, user.Username, user.IsAdmin });
+        }
+
+        [HttpDelete("users/{id}")]
+        public async Task<IActionResult> DeleteUser(int id, [FromQuery] int adminId)
+        {
+            if (!await IsAdminAsync(adminId))
+                return Forbid();
+
+            if (id == adminId)
+                return BadRequest(new { message = "You cannot delete your own account" });
+
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || user.IsDeleted)
+                return NotFound();
+
+            user.IsDeleted = true;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+    }
+}

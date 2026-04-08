@@ -1,0 +1,9 @@
+namespace SocialMediaForGamersApp.DTOs.Comment
+{
+    public class UpdateCommentDto
+    {
+        public string Content { get; set; }
+        public bool IsPositive { get; set; }
+        public int UserId { get; set; }
+    }
+}

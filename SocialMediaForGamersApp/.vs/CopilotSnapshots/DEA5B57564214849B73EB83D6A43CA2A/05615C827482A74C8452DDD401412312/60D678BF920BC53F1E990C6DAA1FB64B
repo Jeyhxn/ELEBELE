@@ -1,0 +1,83 @@
+﻿import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getTopRatedGames, getMostPositiveGames } from '../api'
+
+function GameRow({ title, icon, games }) {
+  const navigate = useNavigate()
+
+  if (!games.length) return null
+
+  return (
+    <div className="featured-section">
+      <h2>{icon} {title}</h2>
+      <div className="featured-scroll">
+        {games.map(game => (
+          <GameCard key={game.id} game={game} onClick={() => navigate(`/game/${game.id}`)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function GameCard({ game, onClick, className = '' }) {
+  const getImageUrl = (imageURL, gameName) => {
+    if (!imageURL) return getPlaceholder(gameName)
+    if (imageURL.startsWith('http')) return imageURL
+    return `https://localhost:7271/images/${imageURL}`
+  }
+
+  const getPlaceholder = (name) => {
+    const colors = ['FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8', 'F7DC6F', 'BB8FCE', '85C1E2']
+    const color = colors[name.charCodeAt(0) % colors.length]
+    return `https://via.placeholder.com/300x180/${color}/FFFFFF?text=${encodeURIComponent(name)}`
+  }
+
+  return (
+    <div className={`featured-card ${className}`} onClick={onClick}>
+      <div className="featured-img-wrapper">
+        <img
+          src={getImageUrl(game.imageURL, game.name)}
+          alt={game.name}
+          onError={(e) => { e.target.src = getPlaceholder(game.name) }}
+        />
+      </div>
+      <div className="featured-card-info">
+        <h4>{game.name}</h4>
+        <span className="featured-meta">
+          {game.rating > 0 && `⭐ ${game.rating}`}
+          {game.category?.name && ` · ${game.category.name}`}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export default function FeaturedSections() {
+  const navigate = useNavigate()
+  const [topRated, setTopRated] = useState([])
+  const [mostPositive, setMostPositive] = useState([])
+
+  useEffect(() => {
+    loadFeatured()
+  }, [])
+
+  const loadFeatured = async () => {
+    try {
+      const [ratedRes, positiveRes] = await Promise.all([
+        getTopRatedGames(10),
+        getMostPositiveGames(10)
+      ])
+      setTopRated(ratedRes.data)
+      setMostPositive(positiveRes.data)
+    } catch (err) {
+      console.error('Failed to load featured:', err)
+    }
+  }
+
+  return (
+    <div className="featured-sections">
+      <GameRow title="Top Rated Games" icon="🏆" games={topRated} />
+      <GameRow title="Most Loved by Community" icon="👍" games={mostPositive} />
+    </div>
+  )
+}

@@ -1,0 +1,106 @@
+﻿import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { loginUser } from '../api'
+import { useAuth } from '../context/AuthContext'
+
+export default function Login() {
+  const navigate = useNavigate()
+  const { login } = useAuth()
+  const [formData, setFormData] = useState({
+    username: '',
+    password: ''
+  })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleChange = (e) => {
+    const { name, value } = e.target
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+
+    if (!formData.username || !formData.password) {
+      setError('Username and password are required')
+      return
+    }
+
+    try {
+      setLoading(true)
+      const response = await loginUser({
+        username: formData.username,
+        password: formData.password
+      })
+
+      if (response.data.success) {
+        login(response.data, response.data.token)
+        navigate('/')
+      } else {
+        setError(response.data.message || 'Login failed')
+      }
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Login failed'
+      setError(errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="auth-container">
+      <div className="auth-card">
+        <h1>🎮 Sign In</h1>
+        <p className="auth-subtitle">Welcome back, gamer</p>
+
+        {error && <div className="error">{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
+            <input
+              type="text"
+              id="username"
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
+              placeholder="Enter your username"
+              disabled={loading}
+              autoComplete="username"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Enter your password"
+              disabled={loading}
+              autoComplete="current-password"
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            className="auth-button auth-button-signin"
+            disabled={loading}
+          >
+            {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          <p>Don't have an account? <a href="/register">Sign Up</a></p>
+        </div>
+      </div>
+    </div>
+  )
+}

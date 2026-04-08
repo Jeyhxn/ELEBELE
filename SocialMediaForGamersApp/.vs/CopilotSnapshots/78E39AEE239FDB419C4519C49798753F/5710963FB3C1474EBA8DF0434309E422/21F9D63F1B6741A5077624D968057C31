@@ -1,0 +1,181 @@
+﻿using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.Models;
+using SocialMediaForGamersApp.Repositories.Interfaces;
+using System.Linq.Expressions;
+using System.Runtime.InteropServices;
+
+namespace SocialMediaForGamersApp.Repositories.Implementations
+{
+    public class Repository : IRepository
+    {
+        private readonly AppDbContext _context;
+
+        public Repository(AppDbContext context  )
+        {
+            _context = context;
+        }
+
+        //category
+        public IQueryable<Category> CategoryGetAll(Expression<Func<Category, bool>>? expression = null,
+            Expression<Func<Category, object>>? orderExpression = null,
+            int skip = 0,
+            int take = 0,
+            bool isDescending = false,
+            bool isTracking = false,
+            params string[]? includes)
+        {
+            IQueryable<Category> query = _context.Categories.Include("Games").OrderBy(c => c.Name);
+
+            if (expression != null)
+                query = query.Where(expression);
+
+            if (includes != null)
+            {
+                foreach (var include in includes)
+                {
+                    query = query.Include(include);
+                }
+            }
+
+            if (orderExpression != null)
+                query = isDescending ? query.OrderByDescending(orderExpression) : query.OrderBy(orderExpression);
+
+            if (take != 0)
+                query = query.Skip(skip).Take(take);
+
+            return isTracking ? query : query.AsNoTracking();
+        }
+
+        public async Task<Category> CategoryGetByIdAsync(int id)
+        {
+            return await _context.Categories.FirstOrDefaultAsync(c => c.Id == id);
+        }
+
+        public async Task AddAsync(Category category)
+        {
+            await _context.Categories.AddAsync(category);
+        }
+
+        public void Delete(Category category)
+        {
+            _context.Categories.Remove(category);
+        }
+
+        public void Update(Category category)
+        {
+            _context.Categories.Update(category);
+        }
+
+        public Task SaveChangeAsync()
+        {
+            return _context.SaveChangesAsync();
+        }
+
+        //platform
+        public IQueryable<Platform> PlatformGetAll(Expression<Func<Platform,
+            bool>>? expression = null,
+            Expression<Func<Platform,
+                object>>? orderExpression = null,
+            int skip = 0,
+            int take = 0,
+            bool isDescending = false,
+            bool isTracking = false,
+            params string[]? includes)
+        {
+            IQueryable<Platform> query = _context.Platforms.OrderBy(c => c.Name);
+
+            if (expression != null)
+                query = query.Where(expression);
+
+            if (includes != null)
+            {
+                foreach (var include in includes)
+                {
+                    query = query.Include(include);
+                }
+            }
+
+            if (orderExpression != null)
+                query = isDescending ? query.OrderByDescending(orderExpression) : query.OrderBy(orderExpression);
+
+            if (take != 0)
+                query = query.Skip(skip).Take(take);
+
+            return isTracking ? query : query.AsNoTracking();
+        }
+
+        public async Task<Platform> PlatformGetByIdAsync(int id)
+        {
+            return await _context.Platforms.FirstOrDefaultAsync(p => p.Id == id);
+        }
+
+        public async Task AddAsync(Platform platform)
+        {
+            await _context.Platforms.AddAsync(platform);
+        }
+
+        public void Delete(Platform platform)
+        {
+            _context.Platforms.Remove(platform);
+        }
+
+        public void Update(Platform platform)
+        {
+            _context.Platforms.Update(platform);
+        }
+
+        //game
+        public IQueryable<Game> GameGetAll(Expression<Func<Game,
+            bool>>? expression = null,
+            Expression<Func<Game,
+                object>>? orderExpression = null,
+            int skip = 0,
+            int take = 0,
+            bool isDescending = false,
+            bool isTracking = false,
+            params string[]? includes)
+        {
+            IQueryable<Game> query = _context.Games.Include(g => g.Category).Include(g => g.GamePlatforms).OrderBy(c => c.Name);
+
+            if (expression != null)
+                query = query.Where(expression);
+
+            if (includes != null)
+            {
+                foreach (var include in includes)
+                {
+                    query = query.Include(include);
+                }
+            }
+
+            if (orderExpression != null)
+                query = isDescending ? query.OrderByDescending(orderExpression) : query.OrderBy(orderExpression);
+
+            if (take != 0)
+                query = query.Skip(skip).Take(take);
+
+            return isTracking ? query : query.AsNoTracking();
+        }
+
+        public async Task<Game> GameGetByIdAsync(int id)
+        {
+            return await _context.Games.FirstOrDefaultAsync(p => p.Id == id);
+        }
+
+        public async Task AddAsync(Game game)
+        {
+            await _context.Games.AddAsync(game);
+        }
+
+        public void Delete(Game game)
+        {
+            _context.Games.Remove(game);
+        }
+
+        public void Update(Game game)
+        {
+            _context.Games.Update(game);
+        }
+    }
+}

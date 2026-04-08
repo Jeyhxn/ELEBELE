@@ -1,0 +1,229 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SocialMediaForGamersApp.Data;
+using SocialMediaForGamersApp.DTOs.Community;
+using SocialMediaForGamersApp.Models;
+
+namespace SocialMediaForGamersApp.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class CommunityController : ControllerBase
+    {
+        private readonly AppDbContext _context;
+
+        public CommunityController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll(string? search = null)
+        {
+            var query = _context.Communities
+                .Where(c => !c.IsDeleted)
+                .Include(c => c.Members.Where(m => !m.IsDeleted))
+                .Include(c => c.Game)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim().ToLower();
+                query = query.Where(c =>
+                    c.Name.ToLower().Contains(term) ||
+                    (c.Description != null && c.Description.ToLower().Contains(term)));
+            }
+
+            var communities = await query
+                .OrderBy(c => c.Name)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.Description,
+                    c.IconURL,
+                    c.CreatedAt,
+                    GameId = c.GameId,
+                    MemberCount = c.Members.Count,
+                    PostCount = c.Posts.Count(p => !p.IsDeleted)
+                })
+                .ToListAsync();
+
+            return Ok(communities);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var community = await _context.Communities
+                .Where(c => c.Id == id && !c.IsDeleted)
+                .Include(c => c.Members.Where(m => !m.IsDeleted))
+                .Include(c => c.Game)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.Description,
+                    c.IconURL,
+                    c.CreatedAt,
+                    c.CreatedByUserId,
+                    GameId = c.GameId,
+                    GameName = c.Game != null ? c.Game.Name : null,
+                    MemberCount = c.Members.Count,
+                    PostCount = c.Posts.Count(p => !p.IsDeleted),
+                    Members = c.Members.Select(m => new { m.UserId, m.User.Username })
+                })
+                .FirstOrDefaultAsync();
+
+            if (community == null) return NotFound();
+
+            return Ok(community);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateCommunityDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+                return BadRequest(new { message = "Community name is required" });
+
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null || user.IsDeleted)
+                return BadRequest(new { message = "User not found" });
+
+            var exists = await _context.Communities
+                .AnyAsync(c => c.Name.ToLower() == dto.Name.Trim().ToLower() && !c.IsDeleted);
+            if (exists)
+                return BadRequest(new { message = "A community with this name already exists" });
+
+            var community = new Community
+            {
+                Name = dto.Name.Trim(),
+                Description = dto.Description?.Trim(),
+                CreatedByUserId = dto.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Communities.Add(community);
+            await _context.SaveChangesAsync();
+
+            // Auto-join the creator
+            _context.CommunityMembers.Add(new CommunityMember
+            {
+                CommunityId = community.Id,
+                UserId = dto.UserId,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            return StatusCode(StatusCodes.Status201Created, new
+            {
+                community.Id,
+                community.Name,
+                community.Description,
+                MemberCount = 1
+            });
+        }
+
+        [HttpPost("{id}/join")]
+        public async Task<IActionResult> Join(int id, [FromQuery] int userId)
+        {
+            var community = await _context.Communities.FindAsync(id);
+            if (community == null || community.IsDeleted) return NotFound();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null || user.IsDeleted)
+                return BadRequest(new { message = "User not found" });
+
+            var existing = await _context.CommunityMembers
+                .FirstOrDefaultAsync(cm => cm.CommunityId == id && cm.UserId == userId);
+
+            if (existing != null)
+            {
+                if (!existing.IsDeleted)
+                    return Ok(new { message = "Already a member" });
+
+                existing.IsDeleted = false;
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Joined community" });
+            }
+
+            _context.CommunityMembers.Add(new CommunityMember
+            {
+                CommunityId = id,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Joined community" });
+        }
+
+        [HttpPost("{id}/leave")]
+        public async Task<IActionResult> Leave(int id, [FromQuery] int userId)
+        {
+            var member = await _context.CommunityMembers
+                .FirstOrDefaultAsync(cm => cm.CommunityId == id && cm.UserId == userId && !cm.IsDeleted);
+
+            if (member == null)
+                return BadRequest(new { message = "Not a member" });
+
+            member.IsDeleted = true;
+
+            // Mark unread notifications from this community's posts as read
+            var communityPostIds = await _context.Posts
+                .Where(p => p.CommunityId == id && !p.IsDeleted)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            if (communityPostIds.Count > 0)
+            {
+                var staleNotifications = await _context.Notifications
+                    .Where(n => n.UserId == userId && !n.IsRead && !n.IsDeleted
+                        && n.Type == "new_post" && n.PostId.HasValue
+                        && communityPostIds.Contains(n.PostId.Value))
+                    .ToListAsync();
+
+                foreach (var n in staleNotifications)
+                    n.IsRead = true;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Left community" });
+        }
+
+        [HttpGet("my")]
+        public async Task<IActionResult> GetMyCommunities([FromQuery] int userId)
+        {
+            var communities = await _context.CommunityMembers
+                .Where(cm => cm.UserId == userId && !cm.IsDeleted && !cm.Community.IsDeleted)
+                .Select(cm => new
+                {
+                    cm.Community.Id,
+                    cm.Community.Name,
+                    cm.Community.Description,
+                    cm.Community.IconURL,
+                    MemberCount = cm.Community.Members.Count(m => !m.IsDeleted),
+                    PostCount = cm.Community.Posts.Count(p => !p.IsDeleted)
+                })
+                .ToListAsync();
+
+            return Ok(communities);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id, [FromQuery] int userId)
+        {
+            var community = await _context.Communities.FindAsync(id);
+            if (community == null || community.IsDeleted) return NotFound();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (community.CreatedByUserId != userId && (user == null || !user.IsAdmin))
+                return Forbid();
+
+            community.IsDeleted = true;
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+    }
+}

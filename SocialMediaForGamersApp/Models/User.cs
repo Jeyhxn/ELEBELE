@@ -1,0 +1,19 @@
+namespace SocialMediaForGamersApp.Models
+{
+    public class User : BaseEntity
+    {
+        public string Username { get; set; }
+        public string Email { get; set; }
+        public string PasswordHash { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public bool IsAdmin { get; set; } = false;
+        public bool IsModerator { get; set; } = false;
+        public bool NotifyNewPosts { get; set; } = true;
+        public bool NotifyCommentReplies { get; set; } = true;
+        public bool NotifyPostVotes { get; set; } = true;
+        public bool IsEmailVerified { get; set; } = false;
+        public string? EmailVerificationToken { get; set; }
+        public DateTime? EmailVerificationTokenExpiry { get; set; }
+    }
+}

@@ -1,0 +1,41 @@
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace SocialMediaForGamersApp.DTOs
+{
+    public class CreateGameDto
+    {
+        [Required(ErrorMessage = "Name is required")]
+        [StringLength(200, MinimumLength = 1, ErrorMessage = "Name must be between 1 and 200 characters")]
+        public string Name { get; set; }
+
+        [Required(ErrorMessage = "Description is required")]
+        [StringLength(1000, MinimumLength = 10, ErrorMessage = "Description must be between 10 and 1000 characters")]
+        public string Description { get; set; }
+
+        [Required(ErrorMessage = "Release date is required")]
+        public DateTime ReleaseDate { get; set; }
+
+        [Required(ErrorMessage = "Developer is required")]
+        [StringLength(150, MinimumLength = 1, ErrorMessage = "Developer must be between 1 and 150 characters")]
+        public string Developer { get; set; }
+
+        [Required(ErrorMessage = "Publisher is required")]
+        [StringLength(150, MinimumLength = 1, ErrorMessage = "Publisher must be between 1 and 150 characters")]
+        public string Publisher { get; set; }
+
+        [Required(ErrorMessage = "Rating is required")]
+        [Range(0, 10, ErrorMessage = "Rating must be between 0 and 10")]
+        public double Rating { get; set; }
+
+        [Required(ErrorMessage = "Image URL is required")]
+        [Url(ErrorMessage = "Image URL must be a valid URL")]
+        public string ImageURL { get; set; }
+
+        [Required(ErrorMessage = "Category ID is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "Category ID must be a valid category")]
+        public int CategoryId { get; set; }
+
+        [Required(ErrorMessage = "At least one platform must be selected")]
+        public List<int> PlatformIds { get; set; } = new();
+    }
+}
